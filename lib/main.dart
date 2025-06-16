@@ -1,4 +1,3 @@
-import 'package:anri/home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:anri/pages/splash_screen.dart'; // Import baru
 
@@ -14,7 +13,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'ANRI Helpdesk App',
+      title: 'Helpdesk Mobile',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, primary: Colors.blue.shade700),
         useMaterial3: true,
