@@ -2,7 +2,9 @@ import 'package:anri/home_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:convert'; // <-- IMPORT BARU untuk JSON
 import 'dart:math' as math;
+import 'package:http/http.dart' as http; // <-- IMPORT BARU untuk HTTP
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LoginPage extends StatefulWidget {
@@ -73,58 +75,86 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
   }
 
-  // --- PERUBAHAN UTAMA DI SINI ---
   void _saveOrClearCredentials() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     if (_rememberMe) {
-      // Jika "Remember Me" dicentang, simpan username DAN status login
-      await prefs.setBool('isLoggedIn', true); // <-- TAMBAHAN
+      await prefs.setBool('isLoggedIn', true);
       await prefs.setString('username', _usernameController.text);
       await prefs.setBool('rememberMe', true);
     } else {
-      // Jika tidak, hapus semua data sesi
-      await prefs.setBool('isLoggedIn', false); // <-- TAMBAHAN
+      await prefs.setBool('isLoggedIn', false);
       await prefs.remove('username');
       await prefs.remove('rememberMe');
     }
   }
-  // --- AKHIR PERUBAHAN ---
 
+  // ===== FUNGSI HANDLE LOGIN YANG BARU =====
   void _handleLogin() async {
     HapticFeedback.lightImpact();
     
-    FocusScope.of(context).unfocus();
     if (_formKey.currentState!.validate()) {
+      FocusScope.of(context).unfocus();
       setState(() {
         _isLoading = true;
         _errorMessage = null;
       });
 
-      await Future.delayed(const Duration(seconds: 2));
+      // GANTI DENGAN URL API ANDA YANG SEBENARNYA
+      final url = Uri.parse('http://localhost:8080/anri_helpdesk_api/login.php');
 
-      if (!mounted) return;
+      try {
+        final response = await http.post(
+          url,
+          headers: {
+            'Content-Type': 'application/json; charset=UTF-8',
+          },
+          body: json.encode({
+            'username': _usernameController.text,
+            'password': _passwordController.text,
+          }),
+        ).timeout(const Duration(seconds: 10)); // Timeout setelah 10 detik
 
-      if (_usernameController.text == 'anri' && _passwordController.text == 'anri123') {
-        // Panggil fungsi yang sudah dimodifikasi
-        _saveOrClearCredentials();
-        
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomePage()),
-        );
-      } else {
+        if (response.statusCode == 200) {
+          final responseData = json.decode(response.body);
+
+          if (responseData['success']) {
+            _saveOrClearCredentials();
+            
+            if(mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (context) => const HomePage()),
+              );
+            }
+          } else {
+            setState(() {
+              _errorMessage = responseData['message'] ?? 'Username atau password salah.';
+            });
+          }
+        } else {
+          setState(() {
+            _errorMessage = 'Gagal terhubung ke server (Error: ${response.statusCode})';
+          });
+        }
+      } catch (e) {
+        // Menangani error timeout atau tidak ada koneksi internet
         setState(() {
-          _isLoading = false;
-          _errorMessage = 'Username or Password incorrect.';
+          _errorMessage = 'Tidak dapat terhubung. Periksa koneksi internet Anda.';
         });
+      } finally {
+        if(mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
       }
     }
   }
+  // ===== AKHIR FUNGSI HANDLE LOGIN BARU =====
 
-  // ... sisa kode build() tidak berubah ...
-  // (Untuk keringkasan, saya tidak menyertakan lagi method build() karena tidak ada perubahan di sana)
   @override
   Widget build(BuildContext context) {
+    // Method build() tidak ada perubahan, sama seperti sebelumnya
     return Scaffold(
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
