@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:anri/pages/splash_screen.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 // Fungsi utama yang menjalankan aplikasi Flutter
 void main() {
+  timeago.setLocaleMessages('id', timeago.IdMessages());
   runApp(const MyApp());
 }
 
@@ -15,11 +17,15 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Helpdesk Mobile',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue, primary: Colors.blue.shade700),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          primary: Colors.blue.shade700,
+        ),
         useMaterial3: true,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const SplashScreen(), // Ini akan tetap berfungsi karena sudah di-import
+      home:
+          const SplashScreen(), // Ini akan tetap berfungsi karena sudah di-import
     );
   }
 }

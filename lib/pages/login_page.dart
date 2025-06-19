@@ -48,7 +48,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       parent: _fadeAnimationController,
       curve: Curves.easeIn,
     );
-    
+
     _loadCredentials();
   }
 
@@ -91,7 +91,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   // ===== FUNGSI HANDLE LOGIN YANG BARU =====
   void _handleLogin() async {
     HapticFeedback.lightImpact();
-    
+
     if (_formKey.currentState!.validate()) {
       FocusScope.of(context).unfocus();
       setState(() {
@@ -100,27 +100,27 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       });
 
       // GANTI DENGAN URL API ANDA YANG SEBENARNYA
-      final url = Uri.parse('http://localhost:8080/anri_helpdesk_api/login.php');
-
+      // Ganti dengan URL API Anda
+      final url = Uri.parse('http://10.8.0.89/anri_helpdesk_api/login.php');
       try {
-        final response = await http.post(
-          url,
-          headers: {
-            'Content-Type': 'application/json; charset=UTF-8',
-          },
-          body: json.encode({
-            'username': _usernameController.text,
-            'password': _passwordController.text,
-          }),
-        ).timeout(const Duration(seconds: 10)); // Timeout setelah 10 detik
+        final response = await http
+            .post(
+              url,
+              headers: {'Content-Type': 'application/json; charset=UTF-8'},
+              body: json.encode({
+                'username': _usernameController.text,
+                'password': _passwordController.text,
+              }),
+            )
+            .timeout(const Duration(seconds: 10)); // Timeout setelah 10 detik
 
         if (response.statusCode == 200) {
           final responseData = json.decode(response.body);
 
           if (responseData['success']) {
             _saveOrClearCredentials();
-            
-            if(mounted) {
+
+            if (mounted) {
               Navigator.pushReplacement(
                 context,
                 MaterialPageRoute(builder: (context) => const HomePage()),
@@ -128,21 +128,24 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             }
           } else {
             setState(() {
-              _errorMessage = responseData['message'] ?? 'Username atau password salah.';
+              _errorMessage =
+                  responseData['message'] ?? 'Username atau password salah.';
             });
           }
         } else {
           setState(() {
-            _errorMessage = 'Gagal terhubung ke server (Error: ${response.statusCode})';
+            _errorMessage =
+                'Gagal terhubung ke server (Error: ${response.statusCode})';
           });
         }
       } catch (e) {
         // Menangani error timeout atau tidak ada koneksi internet
         setState(() {
-          _errorMessage = 'Tidak dapat terhubung. Periksa koneksi internet Anda.';
+          _errorMessage =
+              'Tidak dapat terhubung. Periksa koneksi internet Anda.';
         });
       } finally {
-        if(mounted) {
+        if (mounted) {
           setState(() {
             _isLoading = false;
           });
@@ -179,7 +182,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 return SingleChildScrollView(
                   padding: const EdgeInsets.all(24.0),
                   child: ConstrainedBox(
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
                     child: Form(
                       key: _formKey,
                       child: Column(
@@ -199,15 +204,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                             animation: _auroraController,
                             builder: (context, child) {
                               final double value = _auroraController.value;
-                              final Alignment begin = Alignment(math.sin(value * 2 * math.pi * 1.2), math.cos(value * 2 * math.pi));
-                              final Alignment end = Alignment(math.cos(value * 2 * math.pi), math.sin(value * 2 * math.pi * 1.5));
+                              final Alignment begin = Alignment(
+                                math.sin(value * 2 * math.pi * 1.2),
+                                math.cos(value * 2 * math.pi),
+                              );
+                              final Alignment end = Alignment(
+                                math.cos(value * 2 * math.pi),
+                                math.sin(value * 2 * math.pi * 1.5),
+                              );
                               return ShaderMask(
                                 shaderCallback: (bounds) => LinearGradient(
-                                  colors: [Colors.blue.shade300, Colors.blue.shade700, Colors.lightBlueAccent],
-                                  begin: begin, end: end,
+                                  colors: [
+                                    Colors.blue.shade300,
+                                    Colors.blue.shade700,
+                                    Colors.lightBlueAccent,
+                                  ],
+                                  begin: begin,
+                                  end: end,
                                 ).createShader(bounds),
-                                child: const Text('Helpdesk',
-                                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white, letterSpacing: 2),
+                                child: const Text(
+                                  'Helpdesk',
+                                  style: TextStyle(
+                                    fontSize: 32,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: 2,
+                                  ),
                                 ),
                               );
                             },
@@ -217,17 +239,24 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                             controller: _usernameController,
                             keyboardType: TextInputType.text,
                             textInputAction: TextInputAction.next,
-                            onFieldSubmitted: (_) => FocusScope.of(context).requestFocus(_passwordFocusNode),
+                            onFieldSubmitted: (_) => FocusScope.of(
+                              context,
+                            ).requestFocus(_passwordFocusNode),
                             decoration: const InputDecoration(
                               labelText: 'Username / NIP',
                               hintText: 'Enter your Username or NIP',
-                              border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(12),
+                                ),
+                              ),
                               prefixIcon: Icon(Icons.person),
                               filled: true,
                               fillColor: Colors.white,
                             ),
                             validator: (value) {
-                              if (value == null || value.isEmpty) return 'Username or NIP cannot be empty';
+                              if (value == null || value.isEmpty)
+                                return 'Username or NIP cannot be empty';
                               return null;
                             },
                           ),
@@ -239,18 +268,30 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                             decoration: InputDecoration(
                               labelText: 'Password',
                               hintText: 'Enter your Password',
-                              border: const OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                              border: const OutlineInputBorder(
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(12),
+                                ),
+                              ),
                               prefixIcon: const Icon(Icons.lock),
                               suffixIcon: IconButton(
-                                icon: Icon(_isPasswordVisible ? Icons.visibility : Icons.visibility_off),
-                                onPressed: () => setState(() => _isPasswordVisible = !_isPasswordVisible),
+                                icon: Icon(
+                                  _isPasswordVisible
+                                      ? Icons.visibility
+                                      : Icons.visibility_off,
+                                ),
+                                onPressed: () => setState(
+                                  () =>
+                                      _isPasswordVisible = !_isPasswordVisible,
+                                ),
                               ),
                               filled: true,
                               fillColor: Colors.white,
                             ),
                             onFieldSubmitted: (_) => _handleLogin(),
                             validator: (value) {
-                              if (value == null || value.isEmpty) return 'Password cannot be empty';
+                              if (value == null || value.isEmpty)
+                                return 'Password cannot be empty';
                               return null;
                             },
                           ),
@@ -262,15 +303,22 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 children: [
                                   Checkbox(
                                     value: _rememberMe,
-                                    onChanged: (bool? newValue) => setState(() => _rememberMe = newValue!),
+                                    onChanged: (bool? newValue) =>
+                                        setState(() => _rememberMe = newValue!),
                                     activeColor: Colors.blue.shade700,
                                   ),
-                                  const Text('Remember Me', style: TextStyle(color: Colors.blueGrey)),
+                                  const Text(
+                                    'Remember Me',
+                                    style: TextStyle(color: Colors.blueGrey),
+                                  ),
                                 ],
                               ),
                               TextButton(
                                 onPressed: () {},
-                                child: const Text('Forgot Password?', style: TextStyle(color: Colors.blue)),
+                                child: const Text(
+                                  'Forgot Password?',
+                                  style: TextStyle(color: Colors.blue),
+                                ),
                               ),
                             ],
                           ),
@@ -280,7 +328,10 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               padding: const EdgeInsets.only(bottom: 10.0),
                               child: Text(
                                 _errorMessage!,
-                                style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                                style: const TextStyle(
+                                  color: Colors.red,
+                                  fontWeight: FontWeight.bold,
+                                ),
                                 textAlign: TextAlign.center,
                               ),
                             ),
@@ -292,13 +343,25 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue.shade700,
                                 foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 elevation: 8,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                               child: _isLoading
-                                  ? const CircularProgressIndicator(color: Colors.white)
-                                  : const Text('LOGIN', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  ? const CircularProgressIndicator(
+                                      color: Colors.white,
+                                    )
+                                  : const Text(
+                                      'LOGIN',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
                             ),
                           ),
                         ],
