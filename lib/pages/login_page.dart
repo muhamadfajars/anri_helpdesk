@@ -101,7 +101,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
       // GANTI DENGAN URL API ANDA YANG SEBENARNYA
       // Ganti dengan URL API Anda
-      final url = Uri.parse('http://10.8.0.89/anri_helpdesk_api/login.php');
+      final url = Uri.parse('http://localhost/anri_helpdesk_api/login.php');
       try {
         final response = await http
             .post(

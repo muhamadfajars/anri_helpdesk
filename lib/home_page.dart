@@ -1,32 +1,34 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
 import 'package:anri/pages/login_page.dart';
 import 'package:anri/pages/ticket_detail_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-// Kelas Model Data
 class ProblemRequest {
   final String id;
   final String title;
   final String category;
   final String status;
-  final String division;
   final String priority;
   final String lastUpdate;
-  final String name;
+  final String name; // Ini adalah Requester
+  final String assignedTo;
+  final String lastReplied;
 
   ProblemRequest({
     required this.id,
     required this.title,
     required this.category,
     required this.status,
-    required this.division,
     required this.priority,
     required this.lastUpdate,
     required this.name,
+    required this.assignedTo,
+    required this.lastReplied,
   });
 
   factory ProblemRequest.fromJson(Map<String, dynamic> json) {
@@ -35,10 +37,11 @@ class ProblemRequest {
       title: json['title'] ?? 'No Title',
       category: json['category'] ?? 'Uncategorized',
       status: json['status'] ?? 'Unknown',
-      division: json['division'] ?? 'N/A',
       priority: json['priority'] ?? 'Low',
       lastUpdate: json['lastUpdate'] ?? '',
       name: json['name'] ?? 'Unknown User',
+      assignedTo: json['assignedTo'] ?? 'Unassigned',
+      lastReplied: json['lastReplied'] ?? '-',
     );
   }
 }
@@ -51,16 +54,21 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Date formatter
-  final dateFormat = DateFormat('d MMM yyyy, HH:mm');
-
-  // State variables
   int _selectedIndex = 0;
-  late Future<List<ProblemRequest>> _ticketsFuture;
   String _selectedCategory = 'All';
   String _selectedStatus = 'Semua';
 
-  // Constants
+  List<ProblemRequest> _tickets = [];
+  int _currentPage = 1;
+  bool _isLoading = true;
+  bool _isLoadingMore = false;
+  bool _hasMore = true;
+  String? _error;
+
+  final ScrollController _scrollController = ScrollController();
+  bool _isFabVisible = false;
+  Timer? _autoRefreshTimer;
+
   final Map<String, String> _categories = {
     'All': 'Semua Kategori',
     '1': 'Aplikasi Sistem Informasi',
@@ -92,141 +100,197 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _ticketsFuture = _fetchTickets();
+    _fetchInitialTickets();
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels > 200) {
+        if (!_isFabVisible) setState(() => _isFabVisible = true);
+      } else {
+        if (_isFabVisible) setState(() => _isFabVisible = false);
+      }
+    });
+    _startAutoRefreshTimer();
   }
 
-  // API Methods
-  Future<List<ProblemRequest>> _fetchTickets() async {
-    String statusForAPI = _selectedIndex == 1
-        ? 'Resolved'
-        : (_selectedStatus == 'Semua' ? 'All' : _selectedStatus);
-    String categoryForAPI = _selectedIndex == 0 ? _selectedCategory : 'All';
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
 
-    final baseUrl = 'http://10.8.0.89/anri_helpdesk_api/get_tickets.php';
+  void _startAutoRefreshTimer() {
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+      if (_selectedIndex == 0 && mounted) {
+        _fetchLatestTicketsInBackground();
+      }
+    });
+  }
+
+  Future<void> _fetchLatestTicketsInBackground() async {
+    if (_isLoading || _isLoadingMore) return;
+    String statusForAPI = _selectedStatus == 'Semua' ? 'All' : _selectedStatus;
+    String categoryForAPI = _selectedCategory;
+    final baseUrl = 'http://localhost/anri_helpdesk_api/get_tickets.php';
     final url = Uri.parse(
-      '$baseUrl?status=$statusForAPI&category=$categoryForAPI',
+      '$baseUrl?status=$statusForAPI&category=$categoryForAPI&page=1',
     );
-
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 20));
-
+      final response = await http.get(url);
       if (response.statusCode == 200) {
         final List<dynamic> body = json.decode(response.body);
-        return body
+        final List<ProblemRequest> fetchedTickets = body
             .map(
               (item) => ProblemRequest.fromJson(item as Map<String, dynamic>),
             )
             .toList();
+        if (mounted) {
+          final existingTicketIds = _tickets.map((ticket) => ticket.id).toSet();
+          final newUniqueTickets = fetchedTickets
+              .where((ticket) => !existingTicketIds.contains(ticket.id))
+              .toList();
+          if (newUniqueTickets.isNotEmpty) {
+            setState(() {
+              _tickets.insertAll(0, newUniqueTickets);
+            });
+          }
+        }
+      }
+    } catch (e) {
+      // Auto-refresh failed silently in the background
+    }
+  }
+
+  Future<void> _fetchInitialTickets() async {
+    setState(() {
+      _isLoading = true;
+      _currentPage = 1;
+      _tickets = [];
+      _hasMore = true;
+      _error = null;
+    });
+    await _fetchTickets(page: 1);
+    setState(() => _isLoading = false);
+  }
+
+  Future<void> _loadMoreTickets() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    _currentPage++;
+    await _fetchTickets(page: _currentPage);
+    setState(() => _isLoadingMore = false);
+  }
+
+  Future<void> _fetchTickets({required int page}) async {
+    String statusForAPI = _selectedIndex == 1
+        ? 'Resolved'
+        : (_selectedStatus == 'Semua' ? 'All' : _selectedStatus);
+    String categoryForAPI = _selectedIndex == 0 ? _selectedCategory : 'All';
+    final baseUrl = 'http://localhost/anri_helpdesk_api/get_tickets.php';
+    final url = Uri.parse(
+      '$baseUrl?status=$statusForAPI&category=$categoryForAPI&page=$page',
+    );
+    try {
+      final response = await http.get(url).timeout(const Duration(seconds: 20));
+      if (response.statusCode == 200) {
+        final List<dynamic> body = json.decode(response.body);
+        final List<ProblemRequest> newTickets = body
+            .map(
+              (item) => ProblemRequest.fromJson(item as Map<String, dynamic>),
+            )
+            .toList();
+        if (mounted) {
+          setState(() {
+            if (page == 1)
+              _tickets = newTickets;
+            else
+              _tickets.addAll(newTickets);
+            if (newTickets.length < 10) _hasMore = false;
+          });
+        }
       } else {
         throw Exception('Gagal memuat tiket (Kode: ${response.statusCode})');
       }
     } catch (e) {
-      throw Exception('Tidak dapat terhubung ke server. Periksa koneksi Anda.');
+      if (mounted)
+        setState(
+          () =>
+              _error = 'Tidak dapat terhubung ke server. Periksa koneksi Anda.',
+        );
     }
   }
 
-  Future<void> _reloadData() async {
-    setState(() {
-      _ticketsFuture = _fetchTickets();
-    });
-  }
-
-  Future<void> _logout(BuildContext context) async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', false);
-
-    if (context.mounted) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-        (Route<dynamic> route) => false,
-      );
-    }
-  }
-
-  // Helper Methods
   Color _getStatusColor(String status) {
     switch (status) {
       case 'New':
-        return const Color(0xFFFF0000); // Merah
+        return const Color(0xFFD32F2F);
       case 'Waiting Reply':
-        return const Color(0xFFd66404); // Oranye/Coklat
+        return const Color(0xFFE65100);
       case 'Replied':
-        return const Color(0xFF0000FF); // Biru
+        return const Color(0xFF1976D2);
       case 'In Progress':
-        return const Color(0xFF8c55d4); // Ungu
+        return const Color(0xFF673AB7);
       case 'On Hold':
-        return const Color(0xFFdc2d89); // Pink/Magenta
+        return const Color(0xFFC2185B);
       case 'Resolved':
-        return const Color(0xFF008000); // Hijau
+        return const Color(0xFF388E3C);
       default:
-        return Colors.black;
+        return Colors.grey.shade700;
     }
   }
 
   Color _getPriorityColor(String priority) {
     switch (priority) {
       case 'Critical':
-        return const Color(0xFFFF0000); // Merah
+        return const Color(0xFFD32F2F);
       case 'High':
-        return Colors.orange.shade800; // Orange
+        return const Color(0xFFEF6C00);
       case 'Medium':
-        return Colors.green.shade600; // Hijau
+        return const Color(0xFF689F38);
       case 'Low':
-        return Colors.blue.shade600; // Biru
+        return const Color(0xFF0288D1);
       default:
         return Colors.grey;
     }
   }
 
   IconData _getCategoryIcon(String category) {
-    if (category.contains('Software') || category.contains('Aplikasi')) {
-      return Icons.computer;
-    }
-
+    if (category.contains('Software') ||
+        category.contains('Aplikasi') ||
+        category.contains('SRIKANDI'))
+      return Icons.widgets_outlined;
     switch (category) {
       case 'Perangkat Keras':
-        return Icons.print;
+        return Icons.print_outlined;
       case 'Jaringan Komputer':
-        return Icons.wifi;
+        return Icons.wifi_outlined;
       case 'Bangunan':
-      case 'Fasilitas':
         return Icons.business_outlined;
       case 'Listrik':
-        return Icons.flash_on;
+        return Icons.flash_on_outlined;
       case 'CCTV':
-        return Icons.videocam;
+        return Icons.videocam_outlined;
       case 'Email Dinas':
-        return Icons.email;
+        return Icons.email_outlined;
+      case 'Insiden Siber':
+        return Icons.security_outlined;
       default:
-        return Icons.miscellaneous_services;
+        return Icons.support_agent_outlined;
     }
   }
 
-  String _formatTimeAgo(String dateString) {
-    if (dateString.isEmpty) return '';
-
-    try {
-      final dateTime = DateTime.parse(dateString);
-      final now = DateTime.now();
-      final difference = now.difference(dateTime);
-
-      if (difference.inHours < 24) {
-        // Jika kurang dari 24 jam, gunakan format "time ago"
-        return timeago.format(dateTime, locale: 'id');
-      } else {
-        // Jika lebih dari 24 jam, gunakan format tanggal dan jam
-        return dateFormat.format(dateTime);
-      }
-    } catch (e) {
-      return dateString; // Kembalikan string asli jika parsing gagal
-    }
+  Future<void> _logout(BuildContext context) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedIn', false);
+    if (context.mounted)
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+        (Route<dynamic> route) => false,
+      );
   }
 
-  // Widget Builders
   Widget _buildBody() {
     if (_selectedIndex == 2) {
-      // Tab Pengaturan
       return const Center(
         child: Text(
           'Halaman Pengaturan',
@@ -234,138 +298,284 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
-    return _buildTicketListLayout();
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return _buildErrorState(_error!);
+    }
+    if (_tickets.isEmpty && _selectedIndex != 0) {
+      return _buildEmptyState();
+    }
+    return _buildTicketList();
   }
 
-  Widget _buildTicketListLayout() {
-    return Column(
-      children: [
-        if (_selectedIndex == 0)
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            color: Colors.white,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildCategoryFilter(),
-                const SizedBox(height: 8),
-                _buildStatusFilterChips(),
-              ],
+  Widget _buildHeaderFilterBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Kategori',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.bold,
             ),
           ),
-        const Divider(height: 1, thickness: 1),
-        Expanded(
-          child: FutureBuilder<List<ProblemRequest>>(
-            future: _ticketsFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-
-              if (snapshot.hasError) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Text(
-                      'Error: ${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                );
-              }
-
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Center(child: Text('Tidak ada tiket ditemukan.'));
-              }
-
-              final tickets = snapshot.data!;
-              return RefreshIndicator(
-                onRefresh: _reloadData,
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(8.0),
-                  itemCount: tickets.length,
-                  itemBuilder: (context, index) =>
-                      _buildProblemCard(tickets[index]),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCategoryFilter() {
-    return Row(
-      children: [
-        const Icon(Icons.category_outlined, color: Colors.grey),
-        const SizedBox(width: 8),
-        const Text('Kategori:', style: TextStyle(fontWeight: FontWeight.w500)),
-        const SizedBox(width: 16),
-        Expanded(
-          child: DropdownButton<String>(
-            isExpanded: true,
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
             value: _selectedCategory,
-            underline: const SizedBox.shrink(),
-            onChanged: (String? newValue) {
-              if (newValue != null) {
-                setState(() => _selectedCategory = newValue);
-                _reloadData();
-              }
-            },
+            isExpanded: true,
+            decoration: InputDecoration(
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+            ),
             items: _categories.entries.map((entry) {
               return DropdownMenuItem<String>(
                 value: entry.key,
-                child: Text(entry.value, overflow: TextOverflow.ellipsis),
+                child: Text(
+                  entry.value,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14),
+                ),
               );
             }).toList(),
+            onChanged: (newValue) {
+              if (newValue != null) {
+                setState(() => _selectedCategory = newValue);
+                _fetchInitialTickets();
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Status',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _statusFilters.map((status) {
+                final isSelected = _selectedStatus == status;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 8.0),
+                  child: ChoiceChip(
+                    label: Text(status),
+                    selected: isSelected,
+                    onSelected: (selected) {
+                      if (selected) {
+                        setState(() => _selectedStatus = status);
+                        _fetchInitialTickets();
+                      }
+                    },
+                    selectedColor: Theme.of(
+                      context,
+                    ).primaryColor.withOpacity(0.15),
+                    labelStyle: TextStyle(
+                      fontSize: 13,
+                      color: isSelected
+                          ? Theme.of(context).primaryColor
+                          : Colors.black54,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    side: BorderSide(
+                      color: isSelected
+                          ? Theme.of(context).primaryColor
+                          : Colors.grey.shade300,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const Divider(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTicketList() {
+    bool isHomePage = _selectedIndex == 0;
+    int itemCount =
+        (isHomePage ? 1 : 0) +
+        _tickets.length +
+        (_hasMore || _isLoadingMore ? 1 : 0);
+
+    return RefreshIndicator(
+      onRefresh: _fetchInitialTickets,
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 80),
+        itemCount: itemCount,
+        itemBuilder: (context, index) {
+          if (isHomePage && index == 0) {
+            return _buildHeaderFilterBar();
+          }
+          final ticketIndex = isHomePage ? index - 1 : index;
+          if (ticketIndex < _tickets.length) {
+            return _buildProblemCard(_tickets[ticketIndex]);
+          } else if (_tickets.isEmpty && isHomePage) {
+            return _buildEmptyState();
+          } else {
+            if (_hasMore) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16.0),
+                child: _isLoadingMore
+                    ? const Center(child: CircularProgressIndicator())
+                    : Center(
+                        child: OutlinedButton(
+                          onPressed: _loadMoreTickets,
+                          child: const Text('Muat Lebih Banyak'),
+                        ),
+                      ),
+              );
+            } else if (_tickets.isNotEmpty) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24.0),
+                child: Center(
+                  child: Text(
+                    '-- Anda telah mencapai akhir daftar --',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                ),
+              );
+            } else {
+              return const SizedBox.shrink();
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    final message = _selectedIndex == 1
+        ? 'Belum ada tiket yang diselesaikan.'
+        : 'Tidak ada tiket yang cocok dengan filter Anda.';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 64.0),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              _selectedIndex == 1
+                  ? Icons.history_toggle_off_outlined
+                  : Icons.inbox_outlined,
+              size: 80,
+              color: Colors.grey.shade400,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _selectedIndex == 1 ? 'Riwayat Kosong' : 'Tidak Ada Tiket',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.wifi_off_outlined, size: 80, color: Colors.red.shade300),
+            const SizedBox(height: 16),
+            const Text(
+              'Oops, Terjadi Kesalahan',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _fetchInitialTickets,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Coba Lagi'),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          '$label:',
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Colors.black87,
           ),
         ),
       ],
     );
   }
 
-  Widget _buildStatusFilterChips() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: _statusFilters.map((status) {
-          final isSelected = _selectedStatus == status;
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4.0),
-            child: ChoiceChip(
-              label: Text(status),
-              selected: isSelected,
-              onSelected: (selected) {
-                if (selected) {
-                  setState(() => _selectedStatus = status);
-                  _reloadData();
-                }
-              },
-              selectedColor: Colors.blue.shade100,
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.blue.shade800 : Colors.black54,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-              ),
-              backgroundColor: Colors.white,
-              side: isSelected
-                  ? BorderSide(color: Colors.blue.shade700)
-                  : BorderSide(color: Colors.grey.shade300),
-            ),
-          );
-        }).toList(),
-      ),
-    );
+  String _formatCardDate(String dateString) {
+    if (dateString.isEmpty) return 'N/A';
+    try {
+      final dateTime = DateTime.parse(dateString);
+      return DateFormat('d MMM yyyy, HH:mm', 'id_ID').format(dateTime);
+    } catch (e) {
+      return dateString;
+    }
   }
 
   Widget _buildProblemCard(ProblemRequest request) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 5.0),
+      margin: const EdgeInsets.only(bottom: 12.0),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.grey.shade200),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
       ),
       elevation: 2,
+      shadowColor: Colors.black.withOpacity(0.05),
       child: InkWell(
         onTap: () {
           Navigator.push(
@@ -375,40 +585,35 @@ class _HomePageState extends State<HomePage> {
             ),
           );
         },
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(11),
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Baris atas berisi ID, Status, dan Prioritas
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Tracking ID
                   Text(
-                    request.id,
+                    '#${request.id}',
                     style: TextStyle(
+                      color: Theme.of(context).primaryColor,
                       fontWeight: FontWeight.bold,
-                      fontSize: 15,
-                      color: Colors.blue.shade800,
+                      fontSize: 16,
                     ),
                   ),
-                  const Spacer(),
-                  // Kolom untuk Status dan Prioritas di kanan
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  Row(
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
+                          horizontal: 10,
+                          vertical: 5,
                         ),
                         decoration: BoxDecoration(
                           color: _getStatusColor(
                             request.status,
                           ).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(6),
+                          borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text(
                           request.status,
@@ -419,54 +624,16 @@ class _HomePageState extends State<HomePage> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      // Label Prioritas dengan warna
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _getPriorityColor(
-                            request.priority,
-                          ).withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          request.priority,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: _getPriorityColor(request.priority),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.flag,
+                        color: _getPriorityColor(request.priority),
                       ),
                     ],
                   ),
                 ],
               ),
               const SizedBox(height: 12),
-              // Nama Pelapor
-              Row(
-                children: [
-                  Icon(
-                    Icons.person_outline,
-                    size: 16,
-                    color: Colors.grey.shade700,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    request.name,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade800,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // Judul Tiket
               Text(
                 request.title,
                 style: const TextStyle(
@@ -474,43 +641,24 @@ class _HomePageState extends State<HomePage> {
                   fontSize: 18,
                   color: Colors.black87,
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
               ),
-              const Divider(height: 24),
-              // Baris bawah berisi Kategori dan Waktu Update
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Kategori
-                  Row(
-                    children: [
-                      Icon(
-                        _getCategoryIcon(request.category),
-                        size: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        request.category,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Waktu Update dengan format baru
-                  Text(
-                    _formatTimeAgo(request.lastUpdate),
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade500,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
+              const SizedBox(height: 4),
+              Text(
+                'Kategori: ${request.category}',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
+              const Divider(height: 24, thickness: 1),
+              _buildDetailRow('Requester', request.name),
+              const SizedBox(height: 6),
+              _buildDetailRow('Assigned to', request.assignedTo),
+              const SizedBox(height: 6),
+              _buildDetailRow('Last Replied', request.lastReplied),
+              const SizedBox(height: 6),
+              _buildDetailRow('Update', _formatCardDate(request.lastUpdate)),
             ],
           ),
         ),
@@ -518,24 +666,183 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showFilterBottomSheet() {
+    String tempCategory = _selectedCategory;
+    String tempStatus = _selectedStatus;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setModalState) {
+            return SingleChildScrollView(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 24,
+                  right: 24,
+                  top: 24,
+                  bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Filter Tiket',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Kategori',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: tempCategory,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
+                      ),
+                      items: _categories.entries
+                          .map(
+                            (entry) => DropdownMenuItem<String>(
+                              value: entry.key,
+                              child: Text(
+                                entry.value,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null)
+                          setModalState(() => tempCategory = newValue);
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Status',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8.0,
+                      runSpacing: 8.0,
+                      children: _statusFilters.map((status) {
+                        final isSelected = tempStatus == status;
+                        return ChoiceChip(
+                          label: Text(status),
+                          selected: isSelected,
+                          onSelected: (selected) =>
+                              setModalState(() => tempStatus = status),
+                          selectedColor: Theme.of(
+                            context,
+                          ).primaryColor.withOpacity(0.2),
+                          labelStyle: TextStyle(
+                            color: isSelected
+                                ? Theme.of(context).primaryColor
+                                : Colors.black54,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          side: BorderSide(
+                            color: isSelected
+                                ? Theme.of(context).primaryColor
+                                : Colors.grey.shade300,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 32),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Batal'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                _selectedCategory = tempCategory;
+                                _selectedStatus = tempStatus;
+                              });
+                              _fetchInitialTickets();
+                              Navigator.pop(context);
+                            },
+                            child: const Text('Terapkan'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).primaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    Widget appBarTitle;
+    if (_selectedIndex == 0) {
+      appBarTitle = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Image.asset('assets/images/anri_logo.png', height: 32),
+          const SizedBox(width: 12),
+          const Text(
+            'Help Desk',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      );
+    } else if (_selectedIndex == 1) {
+      appBarTitle = const Text(
+        'Riwayat Selesai',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      );
+    } else {
+      appBarTitle = const Text(
+        'Pengaturan',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Colors.blue.shade700,
-        foregroundColor: Colors.white,
-        title: Text(
-          _selectedIndex == 0
-              ? 'Dashboard'
-              : (_selectedIndex == 1 ? 'Riwayat Selesai' : 'Pengaturan'),
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-        ),
+        title: appBarTitle,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _reloadData,
-            tooltip: 'Refresh Data',
-          ),
           IconButton(
             icon: const Icon(Icons.logout),
             tooltip: 'Logout',
@@ -544,25 +851,47 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       body: _buildBody(),
+      floatingActionButton: _isFabVisible && _selectedIndex == 0
+          ? FloatingActionButton.extended(
+              onPressed: _showFilterBottomSheet,
+              icon: const Icon(Icons.filter_list),
+              label: const Text('Filter'),
+              backgroundColor: Theme.of(context).primaryColor,
+              foregroundColor: Colors.white,
+            )
+          : null,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) {
-          setState(() {
-            _selectedIndex = index;
-            if (index == 0) {
+          if (_selectedIndex != index) {
+            setState(() {
+              _selectedIndex = index;
               _selectedCategory = 'All';
               _selectedStatus = 'Semua';
-            }
-            _reloadData();
-          });
+              _isFabVisible = false;
+              if (_scrollController.hasClients) _scrollController.jumpTo(0);
+            });
+            _fetchInitialTickets();
+          }
         },
-        selectedItemColor: Colors.blue.shade700,
+        selectedItemColor: Theme.of(context).primaryColor,
         unselectedItemColor: Colors.grey.shade600,
+        backgroundColor: Colors.white,
+        elevation: 4,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Beranda'),
-          BottomNavigationBarItem(icon: Icon(Icons.history), label: 'Riwayat'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
+            icon: Icon(Icons.dashboard_outlined),
+            activeIcon: Icon(Icons.dashboard),
+            label: 'Beranda',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history_outlined),
+            activeIcon: Icon(Icons.history),
+            label: 'Riwayat',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.settings_outlined),
+            activeIcon: Icon(Icons.settings),
             label: 'Pengaturan',
           ),
         ],

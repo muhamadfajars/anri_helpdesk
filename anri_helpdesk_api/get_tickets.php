@@ -5,57 +5,59 @@ ini_set('display_errors', 1);
 require 'koneksi.php';
 header('Content-Type: application/json');
 
-// Mengambil parameter filter dari URL
+$limit = 10;
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$offset = ($page - 1) * $limit;
+
 $status_filter_text = isset($_GET['status']) ? trim($_GET['status']) : 'All';
 $category_filter = isset($_GET['category']) ? trim($_GET['category']) : 'All';
 
-// Mapping teks status ke ID status di database
 $status_map = [
     'New' => 0, 'Waiting Reply' => 1, 'Replied' => 2,
     'Resolved' => 3, 'In Progress' => 4, 'On Hold' => 5,
 ];
 
-// Query dasar, mengambil t.dt (waktu dibuat) dan t.name
+// --- QUERY BARU UNTUK MENGAMBIL DATA TAMBAHAN ---
 $sql = "SELECT 
-            t.trackid, t.name, t.subject, t.status, t.priority,
-            t.dt AS creation_date, -- MENGAMBIL WAKTU DIBUAT
-            c.name AS category_name
+            t.trackid, t.name AS requester_name, t.subject, t.status, t.priority,
+            t.lastchange AS update_date,
+            c.name AS category_name,
+            owner_user.name AS assigned_to_name
         FROM `hesk_tickets` AS t
-        LEFT JOIN `hesk_categories` AS c ON t.category = c.id";
+        LEFT JOIN `hesk_categories` AS c ON t.category = c.id
+        LEFT JOIN `hesk_users` AS owner_user ON t.owner = owner_user.id";
 
 $conditions = [];
 $params = [];
 $types = '';
 
-// --- LOGIKA FILTER STATUS BARU ---
 if ($status_filter_text == 'All') {
-    // Jika filter 'All', tampilkan semua KECUALI yang sudah 'Resolved'
     $conditions[] = "t.status != ?";
-    $params[] = 3; // ID untuk 'Resolved'
+    $params[] = 3;
     $types .= 'i';
 } elseif (array_key_exists($status_filter_text, $status_map)) {
-    // Jika filter status spesifik, cari berdasarkan ID status tersebut
     $conditions[] = "t.status = ?";
     $params[] = $status_map[$status_filter_text];
     $types .= 'i';
 }
 
-// Logika filter kategori
 if ($category_filter != 'All') {
     $conditions[] = "t.category = ?";
     $params[] = $category_filter;
     $types .= 'i';
 }
 
-// Menggabungkan semua kondisi filter
 if (!empty($conditions)) {
     $sql .= " WHERE " . implode(" AND ", $conditions);
 }
 
-// --- MENGURUTKAN BERDASARKAN WAKTU DIBUAT (TERBARU DI ATAS) ---
-$sql .= " ORDER BY t.dt DESC";
+$sql .= " ORDER BY (t.priority = 0) DESC, t.lastchange DESC"; // Urutkan berdasarkan update terakhir
 
-// Eksekusi query dengan aman
+$sql .= " LIMIT ? OFFSET ?";
+$params[] = $limit;
+$params[] = $offset;
+$types .= 'ii';
+
 $stmt = mysqli_prepare($conn, $sql);
 if ($stmt === false) {
     echo json_encode(['success' => false, 'message' => 'Query SQL Error: ' . mysqli_error($conn)]);
@@ -67,7 +69,6 @@ if (!empty($params)) {
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 
-// Proses hasil query
 $tickets = [];
 if ($result) {
     while ($row = mysqli_fetch_assoc($result)) {
@@ -78,13 +79,15 @@ if ($result) {
 
         $tickets[] = [
             'id' => $row['trackid'],
-            'name' => $row['name'],
+            'name' => $row['requester_name'], // Diubah dari 'name' agar lebih jelas
             'title' => $row['subject'],
             'category' => $row['category_name'],
             'status' => $status_text,
-            'division' => 'Umum',
             'priority' => $priority_text,
-            'lastUpdate' => $row['creation_date'] // MENGIRIM WAKTU DIBUAT
+            'lastUpdate' => $row['update_date'], // Menggunakan 'lastchange'
+            // --- DATA BARU YANG DIKIRIM ---
+            'assignedTo' => $row['assigned_to_name'] ?? 'Unassigned',
+            'lastReplied' => $row['requester_name'], // Placeholder sesuai gambar
         ];
     }
 }
