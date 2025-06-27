@@ -98,6 +98,7 @@ class _HomePageState extends State<HomePage> {
   bool _isFabVisible = false;
 
   List<String> _teamMembers = ['Unassigned'];
+
   final Map<String, String> _categories = {
     'All': 'Semua Kategori',
     '1': 'Aplikasi Sistem Informasi',
@@ -137,11 +138,13 @@ class _HomePageState extends State<HomePage> {
     } else {
       return 'http://10.0.2.2/anri_helpdesk_api';
     }
+
   }
 
   @override
   void initState() {
     super.initState();
+
     _fetchInitialTickets();
     _fetchTeamMembers();
 
@@ -164,6 +167,15 @@ class _HomePageState extends State<HomePage> {
 
     _startAutoRefreshTimer();
   }
+  
+  Future<void> _fetchInitialData() async {
+    setState(() => _isLoading = true);
+    await Future.wait([
+      _fetchTeamMembers(),
+      _fetchTickets(page: 1),
+    ]);
+    if (mounted) setState(() => _isLoading = false);
+  }
 
   @override
   void dispose() {
@@ -173,18 +185,30 @@ class _HomePageState extends State<HomePage> {
     super.dispose();
   }
 
+
   void _startAutoRefreshTimer() {
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
       if (_selectedIndex != 2 && mounted && !_isLoading && !_isLoadingMore) {
         _fetchInitialTickets();
       }
     });
+
   }
 
   Future<void> _fetchTeamMembers() async {
+    final headers = await _getAuthHeaders();
+    if (headers.isEmpty && mounted) return;
+
     try {
       final url = Uri.parse('$baseUrl/get_users.php');
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
+      final response =
+          await http.get(url, headers: headers).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 401) {
+        if(mounted) _logout(context, message: 'Sesi tidak valid.');
+        return;
+      }
+
       if (response.statusCode == 200 && mounted) {
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
@@ -209,6 +233,7 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _searchQuery = _searchController.text;
       });
+
     }
     _fetchInitialTickets();
   }
@@ -239,6 +264,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _fetchTickets({required int page}) async {
+
     String statusForAPI = _selectedStatus;
     if (_selectedIndex == 1) {
       statusForAPI = 'Resolved';
@@ -249,8 +275,16 @@ class _HomePageState extends State<HomePage> {
     final url = Uri.parse(
       '$baseUrl/get_tickets.php?status=$statusForAPI&category=$_selectedCategory&page=$page&search=$_searchQuery',
     );
+
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 20));
+      final response =
+          await http.get(url, headers: headers).timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 401) {
+        if (mounted) _logout(context, message: 'Sesi Anda tidak valid. Silakan login kembali.');
+        return;
+      }
+
       if (response.statusCode == 200 && mounted) {
         final Map<String, dynamic> responseData = json.decode(response.body);
         if (responseData['success'] == true) {
@@ -274,8 +308,7 @@ class _HomePageState extends State<HomePage> {
         }
       } else {
         throw Exception(
-          'Gagal terhubung ke server (Kode: ${response.statusCode})',
-        );
+            'Gagal terhubung ke server (Kode: ${response.statusCode})');
       }
     } catch (e) {
       if (mounted) {
@@ -284,22 +317,36 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _logout(BuildContext context, {String? message}) async {
+    if (!mounted) return;
+    
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+          (Route<dynamic> route) => false,
+        );
+        if (message != null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(message), backgroundColor: Colors.red));
+        }
+      }
+    });
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'New':
-        return const Color(0xFFD32F2F);
-      case 'Waiting Reply':
-        return const Color(0xFFE65100);
-      case 'Replied':
-        return const Color(0xFF1976D2);
-      case 'In Progress':
-        return const Color(0xFF673AB7);
-      case 'On Hold':
-        return const Color(0xFFC2185B);
-      case 'Resolved':
-        return const Color(0xFF388E3C);
-      default:
-        return Colors.grey.shade700;
+      case 'New': return const Color(0xFFD32F2F);
+      case 'Waiting Reply': return const Color(0xFFE65100);
+      case 'Replied': return const Color(0xFF1976D2);
+      case 'In Progress': return const Color(0xFF673AB7);
+      case 'On Hold': return const Color(0xFFC2185B);
+      case 'Resolved': return const Color(0xFF388E3C);
+      default: return Colors.grey.shade700;
     }
   }
 
@@ -398,6 +445,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildBody() {
+
     switch (_selectedIndex) {
       case 0:
       case 1:

@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:anri/models/reply_models.dart';
 import 'package:anri/home_page.dart';
+import 'package:anri/pages/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:flutter_html/flutter_html.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class TicketDetailScreen extends StatefulWidget {
   final Ticket ticket;
@@ -27,7 +29,6 @@ class TicketDetailScreen extends StatefulWidget {
 }
 
 class _TicketDetailScreenState extends State<TicketDetailScreen> {
-  // --- FIX: MENGEMBALIKAN SEMUA STATE & FUNGSI YANG HILANG ---
   final _scrollController = ScrollController();
   final _replyFormKey = GlobalKey();
 
@@ -87,9 +88,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   void dispose() {
     _replyMessageController.dispose();
     _scrollController.dispose();
-    _stopwatchTimer?.cancel(); // Pastikan timer berhenti
+    _stopwatchTimer?.cancel();
     super.dispose();
   }
+
+  // --- FUNGSI-FUNGSI LOGIC & KEAMANAN ---
 
   Duration _parseDuration(String time) {
     final parts = time.split(':');
@@ -129,16 +132,37 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       _isStopwatchRunning = !_isStopwatchRunning;
     });
   }
-
+  
   void _scrollToReplyForm() {
     final context = _replyFormKey.currentContext;
     if (context != null) {
-      Scrollable.ensureVisible(
-        context,
-        duration: const Duration(milliseconds: 500),
-        curve: Curves.easeInOut,
-      );
+      Scrollable.ensureVisible(context, duration: const Duration(milliseconds: 500), curve: Curves.easeInOut);
     }
+  }
+
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString('auth_token');
+    if (token == null) {
+      if (mounted) _logout(message: 'Sesi tidak valid. Silakan login kembali.');
+      return {};
+    }
+    return {'Authorization': 'Bearer $token'};
+  }
+
+  Future<void> _logout({String? message}) async {
+    if (!mounted) return;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (context) => const LoginPage()), (route) => false);
+        if (message != null) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message), backgroundColor: Colors.red));
+        }
+      }
+    });
   }
 
   Future<void> _fetchTicketDetails() async {
@@ -147,17 +171,20 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       'http://localhost/anri_helpdesk_api/get_ticket_details.php?id=${widget.ticket.id}',
     );
     try {
-      final response = await http.get(url).timeout(const Duration(seconds: 15));
-      if (mounted && response.statusCode == 200) {
-        final responseData = json.decode(response.body);
-        if (responseData['success'] == true) {
-          final List<dynamic> repliesData = responseData['replies'];
-          setState(() {
-            _replies = repliesData.map((data) => Reply.fromJson(data)).toList();
-            _isLoadingDetails = false;
-          });
-        } else {
-          throw Exception('Gagal memuat detail dari API.');
+      final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 15));
+      if (mounted) {
+        if (response.statusCode == 401) { _logout(message: 'Sesi tidak valid.'); return; }
+        if (response.statusCode == 200) {
+          final responseData = json.decode(response.body);
+          if (responseData['success'] == true) {
+            final List<dynamic> repliesData = responseData['replies'];
+            setState(() {
+              _replies = repliesData.map((data) => Reply.fromJson(data)).toList();
+              _isLoadingDetails = false;
+            });
+          } else {
+            throw Exception('Gagal memuat detail dari API.');
+          }
         }
       }
     } catch (e) {
@@ -183,15 +210,14 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       'category_name': _selectedCategory,
       'owner_name': _assignedTo,
       'time_worked': finalTimeWorked,
-      'due_date': _dueDate != null
-          ? DateFormat('yyyy-MM-dd HH:mm:ss').format(_dueDate!)
-          : '',
+      'due_date': _dueDate != null ? DateFormat('yyyy-MM-dd HH:mm:ss').format(_dueDate!) : '',
     };
     try {
       final response = await http
           .post(url, body: body)
           .timeout(const Duration(seconds: 15));
       if (mounted) {
+        if (response.statusCode == 401) { _logout(message: 'Sesi tidak valid.'); return; }
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -247,6 +273,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           )
           .timeout(const Duration(seconds: 20));
       if (mounted) {
+        if (response.statusCode == 401) { _logout(message: 'Sesi tidak valid.'); return; }
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -386,6 +413,20 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     }
   }
 
+  void _assignToMe() {
+    if (_assignedTo == widget.currentUserName) return;
+    setState(() => _assignedTo = widget.currentUserName);
+    _saveChanges();
+  }
+
+  void _markAsResolved() {
+    setState(() {
+      _selectedStatus = 'Resolved';
+      _isResolved = true;
+    });
+    _saveChanges();
+  }
+
   Color _getStatusColor(String status) {
     switch (status) {
       case 'New':
@@ -418,20 +459,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       default:
         return Colors.grey;
     }
-  }
-
-  void _assignToMe() {
-    if (_assignedTo == widget.currentUserName) return;
-    setState(() => _assignedTo = widget.currentUserName);
-    _saveChanges();
-  }
-
-  void _markAsResolved() {
-    setState(() {
-      _selectedStatus = 'Resolved';
-      _isResolved = true;
-    });
-    _saveChanges();
   }
 
   @override

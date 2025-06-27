@@ -22,7 +22,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   bool _isPasswordVisible = false;
   bool _isLoading = false;
   String? _errorMessage;
-  bool _rememberMe = false;
+  bool _rememberMe = true;
 
   late AnimationController _auroraController;
   late AnimationController _fadeAnimationController;
@@ -63,6 +63,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   void _loadCredentials() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
+
     final bool rememberMe = prefs.getBool('rememberMe') ?? false;
 
     if (rememberMe) {
@@ -108,7 +109,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       });
 
       final url = Uri.parse('http://localhost/anri_helpdesk_api/login.php');
-
       try {
         final response = await http
             .post(
@@ -127,6 +127,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           if (responseData['success']) {
             final userData = responseData['user_data'] as Map<String, dynamic>;
             final String currentUserName = userData['name'];
+            final String? authToken = responseData['token'];
 
             // Panggil fungsi penyimpanan yang baru
             await _saveSessionData(userData);
@@ -172,6 +173,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    // Seluruh UI (build method) tidak ada perubahan sama sekali
     return Scaffold(
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
@@ -321,8 +323,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                 children: [
                                   Checkbox(
                                     value: _rememberMe,
-                                    onChanged: (bool? newValue) =>
-                                        setState(() => _rememberMe = newValue!),
+                                    onChanged: (bool? newValue) => setState(
+                                        () => _rememberMe = newValue!),
                                     activeColor: Colors.blue.shade700,
                                   ),
                                   const Text(
