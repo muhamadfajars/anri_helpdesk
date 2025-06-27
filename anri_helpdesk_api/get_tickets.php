@@ -20,59 +20,61 @@ $offset = ($page - 1) * $limit;
 // --- FILTER DINAMIS ---
 $status_filter_text = isset($_GET['status']) ? trim($_GET['status']) : 'All';
 $category_filter = isset($_GET['category']) ? trim($_GET['category']) : 'All';
+// --- PERBAIKAN: Tambahkan baris ini untuk mengambil parameter pencarian ---
+$search_query = isset($_GET['search']) ? trim($_GET['search']) : '';
+
 
 $status_map = [
     'New' => 0, 'Waiting Reply' => 1, 'Replied' => 2,
     'Resolved' => 3, 'In Progress' => 4, 'On Hold' => 5,
 ];
 
-// --- PERUBAHAN 1: Menambahkan field replies, time_worked, dan due_date ke SELECT ---
+// Query SELECT tetap sama
 $sql = "SELECT
-            t.id,
-            t.trackid,
-            t.name AS requester_name,
-            t.subject,
-            t.dt AS creation_date,
-            t.lastchange,
-            t.status,
-            t.priority,
-            t.lastreplier,
-            t.message,
-            t.replies,
-            t.time_worked,
-            t.due_date,
-            c.name AS category_name,
-            o.name AS owner_name,
-            lr.name AS last_replier_name
-        FROM
-            `hesk_tickets` AS t
+            t.id, t.trackid, t.name AS requester_name, t.subject,
+            t.dt AS creation_date, t.lastchange, t.status, t.priority,
+            t.lastreplier, t.message, t.replies, t.time_worked, t.due_date,
+            c.name AS category_name, o.name AS owner_name, lr.name AS last_replier_name
+        FROM `hesk_tickets` AS t
         LEFT JOIN `hesk_categories` AS c ON t.category = c.id
         LEFT JOIN `hesk_users` AS o ON t.owner = o.id
         LEFT JOIN `hesk_users` AS lr ON t.replierid = lr.id";
 
-// Logika WHERE dinamis (tidak ada perubahan)
+// --- PERBAIKAN: Logika WHERE dinamis dengan tambahan kondisi PENCARIAN ---
 $conditions = [];
 $params = [];
 $types = '';
 
-// Jika status 'All', tampilkan semua tiket yang BELUM selesai
+// Filter Status (fitur yang sudah ada, tidak diubah)
 if ($status_filter_text == 'All') {
     $conditions[] = "t.status != ?";
     $params[] = 3; // ID untuk 'Resolved'
     $types .= 'i';
 } 
-// Jika status 'Resolved' atau status spesifik lainnya
 else if (array_key_exists($status_filter_text, $status_map)) {
     $conditions[] = "t.status = ?";
     $params[] = $status_map[$status_filter_text];
     $types .= 'i';
 }
 
+// Filter Kategori (fitur yang sudah ada, tidak diubah)
 if ($category_filter != 'All') {
-    $conditions[] = "t.category = ?"; // Filter berdasarkan ID kategori
-    $params[] = $category_filter;
+    $conditions[] = "t.category = ?";
+    $params[] = (int)$category_filter;
     $types .= 'i';
 }
+
+// --- PERBAIKAN: Tambahkan blok ini untuk filter pencarian ---
+if (!empty($search_query)) {
+    // Mencari di beberapa kolom: subjek, nama pembuat tiket, track ID, dan nama staf yang ditugaskan.
+    $conditions[] = "(t.subject LIKE ? OR t.name LIKE ? OR t.trackid LIKE ?)";
+    $search_param = "%" . $search_query . "%";
+    $params[] = $search_param;
+    $params[] = $search_param;
+    $params[] = $search_param;
+    $types .= 'sss';
+}
+
 
 if (!empty($conditions)) {
     $sql .= " WHERE " . implode(" AND ", $conditions);
@@ -99,7 +101,7 @@ if (!empty($params)) {
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 
-// Proses Hasil
+// Proses Hasil (Tidak ada perubahan di bagian ini)
 $response = [];
 $tickets = [];
 if ($result) {
@@ -113,12 +115,9 @@ if ($result) {
             $row['owner_name'] = 'Unassigned';
         }
 
-        // --- PERUBAHAN 2: Memperbaiki logika 'last_replier_text' ---
         if (is_null($row['last_replier_name'])) {
-            // Jika tidak ada yang membalas, kirim null. Flutter akan menampilkannya sebagai "-"
             $row['last_replier_text'] = null;
         } else {
-            // Jika ada yang membalas, cek apakah dari staf atau bukan
             $prefix = ($row['lastreplier'] == '1') ? 'Staf: ' : '';
             $row['last_replier_text'] = $prefix . $row['last_replier_name'];
         }

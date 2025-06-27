@@ -35,7 +35,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Timer? _stopwatchTimer;
   bool _isStopwatchRunning = false;
   late Duration _workedDuration;
-  
+
   // State lainnya
   late String _selectedStatus;
   late String _selectedPriority;
@@ -51,11 +51,21 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   List<Reply> _replies = [];
 
   final List<String> _statusOptions = [
-    'New', 'In Progress', 'Waiting Reply', 'Replied', 'On Hold', 'Resolved'
+    'New',
+    'In Progress',
+    'Waiting Reply',
+    'Replied',
+    'On Hold',
+    'Resolved',
   ];
   final List<String> _priorityOptions = ['Critical', 'High', 'Medium', 'Low'];
   final List<String> _submitAsOptions = [
-    'Replied', 'Waiting Reply', 'Resolved', 'In Progress', 'On Hold', 'New'
+    'Replied',
+    'Waiting Reply',
+    'Resolved',
+    'In Progress',
+    'On Hold',
+    'New',
   ];
 
   @override
@@ -67,7 +77,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     _assignedTo = widget.ticket.ownerName;
     _dueDate = widget.ticket.dueDate;
     _isResolved = _selectedStatus == 'Resolved';
-    _workedDuration = _parseDuration(widget.ticket.timeWorked); // Inisialisasi durasi
+    _workedDuration = _parseDuration(
+      widget.ticket.timeWorked,
+    ); // Inisialisasi durasi
     _fetchTicketDetails();
   }
 
@@ -132,7 +144,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Future<void> _fetchTicketDetails() async {
     setState(() => _isLoadingDetails = true);
     final url = Uri.parse(
-        'http://192.168.1.11:8080/anri_helpdesk_api/get_ticket_details.php?id=${widget.ticket.id}');
+      'http://localhost/anri_helpdesk_api/get_ticket_details.php?id=${widget.ticket.id}',
+    );
     try {
       final response = await http.get(url).timeout(const Duration(seconds: 15));
       if (mounted && response.statusCode == 200) {
@@ -151,7 +164,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       if (mounted) {
         setState(() => _isLoadingDetails = false);
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error memuat riwayat balasan: $e')));
+          SnackBar(content: Text('Error memuat riwayat balasan: $e')),
+        );
       }
     }
   }
@@ -159,8 +173,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Future<void> _saveChanges() async {
     setState(() => _isSaving = true);
     final finalTimeWorked = _formatDuration(_workedDuration);
-    final url =
-        Uri.parse('http://192.168.1.11:8080/anri_helpdesk_api/update_ticket.php');
+    final url = Uri.parse(
+      'http://localhost/anri_helpdesk_api/update_ticket.php',
+    );
     final Map<String, String> body = {
       'ticket_id': widget.ticket.id.toString(),
       'status': _selectedStatus,
@@ -173,25 +188,33 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           : '',
     };
     try {
-      final response =
-          await http.post(url, body: body).timeout(const Duration(seconds: 15));
+      final response = await http
+          .post(url, body: body)
+          .timeout(const Duration(seconds: 15));
       if (mounted) {
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
               content: Text('Perubahan berhasil disimpan!'),
-              backgroundColor: Colors.green));
+              backgroundColor: Colors.green,
+            ),
+          );
           Navigator.pop(context, true);
         } else {
           throw Exception(
-              responseData['message'] ?? 'Gagal menyimpan perubahan.');
+            responseData['message'] ?? 'Gagal menyimpan perubahan.',
+          );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
             content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red));
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSaving = false);
@@ -200,28 +223,38 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   Future<void> _submitReply() async {
     if (_replyMessageController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
           content: Text('Pesan balasan tidak boleh kosong.'),
-          backgroundColor: Colors.orange));
+          backgroundColor: Colors.orange,
+        ),
+      );
       return;
     }
     setState(() => _isSubmittingReply = true);
-    final url =
-        Uri.parse('http://192.168.1.11:8080/anri_helpdesk_api/add_reply.php');
+    final url = Uri.parse('http://localhost/anri_helpdesk_api/add_reply.php');
     try {
-      final response = await http.post(url, body: {
-        'ticket_id': widget.ticket.id.toString(),
-        'message': _replyMessageController.text,
-        'new_status': _submitAsAction,
-        'staff_id': '1',
-        'staff_name': widget.currentUserName,
-      }).timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            url,
+            body: {
+              'ticket_id': widget.ticket.id.toString(),
+              'message': _replyMessageController.text,
+              'new_status': _submitAsAction,
+              'staff_id': '1',
+              'staff_name': widget.currentUserName,
+            },
+          )
+          .timeout(const Duration(seconds: 20));
       if (mounted) {
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
               content: Text('Balasan berhasil dikirim!'),
-              backgroundColor: Colors.green));
+              backgroundColor: Colors.green,
+            ),
+          );
           Navigator.pop(context, true);
         } else {
           throw Exception(responseData['message'] ?? 'Gagal mengirim balasan.');
@@ -229,9 +262,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
             content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red));
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _isSubmittingReply = false);
@@ -240,7 +276,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   void _showTimeWorkedEditor() async {
     if (_isStopwatchRunning) _toggleStopwatch();
-    
+
     final parts = _formatDuration(_workedDuration).split(':');
     final hoursController = TextEditingController(text: parts[0]);
     final minutesController = TextEditingController(text: parts[1]);
@@ -252,13 +288,18 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       builder: (context) => Padding(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom,
-          left: 16, right: 16, top: 16,
+          left: 16,
+          right: 16,
+          top: 16,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Edit Time Worked', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              'Edit Time Worked',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 16),
             _buildTimeInput(controller: hoursController, label: 'Hours'),
             const SizedBox(height: 8),
@@ -268,7 +309,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel'))),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton(
@@ -277,7 +323,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                       final h = int.tryParse(hoursController.text) ?? 0;
                       final m = int.tryParse(minutesController.text) ?? 0;
                       final s = int.tryParse(secondsController.text) ?? 0;
-                      setState(() => _workedDuration = Duration(hours: h, minutes: m, seconds: s));
+                      setState(
+                        () => _workedDuration = Duration(
+                          hours: h,
+                          minutes: m,
+                          seconds: s,
+                        ),
+                      );
                       Navigator.pop(context);
                     },
                   ),
@@ -291,43 +343,80 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  Widget _buildTimeInput({required TextEditingController controller, required String label}) {
+  Widget _buildTimeInput({
+    required TextEditingController controller,
+    required String label,
+  }) {
     return TextFormField(
       controller: controller,
       keyboardType: TextInputType.number,
-      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(2)],
-      decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+        LengthLimitingTextInputFormatter(2),
+      ],
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+      ),
     );
   }
 
   Future<void> _showDueDateEditor() async {
-    final pickedDate = await showDatePicker(context: context, initialDate: _dueDate ?? DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime(2030));
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _dueDate ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2030),
+    );
     if (pickedDate == null || !mounted) return;
-    final pickedTime = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_dueDate ?? DateTime.now()));
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_dueDate ?? DateTime.now()),
+    );
     if (pickedTime != null) {
-      setState(() => _dueDate = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, pickedTime.hour, pickedTime.minute));
+      setState(
+        () => _dueDate = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          pickedTime.hour,
+          pickedTime.minute,
+        ),
+      );
     }
   }
 
   Color _getStatusColor(String status) {
     switch (status) {
-      case 'New': return const Color(0xFFD32F2F);
-      case 'Waiting Reply': return const Color(0xFFE65100);
-      case 'Replied': return const Color(0xFF1976D2);
-      case 'In Progress': return const Color(0xFF673AB7);
-      case 'On Hold': return const Color(0xFFC2185B);
-      case 'Resolved': return const Color(0xFF388E3C);
-      default: return Colors.grey.shade700;
+      case 'New':
+        return const Color(0xFFD32F2F);
+      case 'Waiting Reply':
+        return const Color(0xFFE65100);
+      case 'Replied':
+        return const Color(0xFF1976D2);
+      case 'In Progress':
+        return const Color(0xFF673AB7);
+      case 'On Hold':
+        return const Color(0xFFC2185B);
+      case 'Resolved':
+        return const Color(0xFF388E3C);
+      default:
+        return Colors.grey.shade700;
     }
   }
 
   Color _getPriorityColor(String priority) {
     switch (priority) {
-      case 'Critical': return const Color(0xFFD32F2F);
-      case 'High': return const Color(0xFFEF6C00);
-      case 'Medium': return const Color(0xFF689F38);
-      case 'Low': return const Color(0xFF0288D1);
-      default: return Colors.grey;
+      case 'Critical':
+        return const Color(0xFFD32F2F);
+      case 'High':
+        return const Color(0xFFEF6C00);
+      case 'Medium':
+        return const Color(0xFF689F38);
+      case 'Low':
+        return const Color(0xFF0288D1);
+      default:
+        return Colors.grey;
     }
   }
 
@@ -349,7 +438,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.ticket.subject, style: const TextStyle(fontSize: 18), overflow: TextOverflow.ellipsis),
+        title: Text(
+          widget.ticket.subject,
+          style: const TextStyle(fontSize: 18),
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -376,12 +469,16 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             const SizedBox(height: 16),
             Card(
               elevation: 1,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 children: [
                   _buildCollapsibleDescription(),
-                  if (_replies.isNotEmpty || !_isLoadingDetails) const Divider(height: 1, thickness: 1),
+                  if (_replies.isNotEmpty || !_isLoadingDetails)
+                    const Divider(height: 1, thickness: 1),
                   _buildCollapsibleReplies(),
                 ],
               ),
@@ -399,7 +496,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   children: [
                     TextFormField(
                       controller: _replyMessageController,
-                      decoration: const InputDecoration(hintText: 'Type your message...', border: OutlineInputBorder()),
+                      decoration: const InputDecoration(
+                        hintText: 'Type your message...',
+                        border: OutlineInputBorder(),
+                      ),
                       maxLines: 8,
                       minLines: 5,
                     ),
@@ -411,16 +511,41 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                           flex: 2,
                           child: DropdownButtonFormField<String>(
                             value: _submitAsAction,
-                            items: _submitAsOptions.map((v) => DropdownMenuItem<String>(value: v, child: Text(v, overflow: TextOverflow.ellipsis))).toList(),
-                            onChanged: (v) => setState(() { if (v != null) _submitAsAction = v; }),
-                            decoration: const InputDecoration(labelText: 'Submit as', border: OutlineInputBorder()),
+                            items: _submitAsOptions
+                                .map(
+                                  (v) => DropdownMenuItem<String>(
+                                    value: v,
+                                    child: Text(
+                                      v,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (v) => setState(() {
+                              if (v != null) _submitAsAction = v;
+                            }),
+                            decoration: const InputDecoration(
+                              labelText: 'Submit as',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         ElevatedButton(
                           onPressed: _isSubmittingReply ? null : _submitReply,
-                          style: ElevatedButton.styleFrom(minimumSize: const Size(110, 58)),
-                          child: _isSubmittingReply ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 3)) : const Text('Submit'),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(110, 58),
+                          ),
+                          child: _isSubmittingReply
+                              ? const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                  ),
+                                )
+                              : const Text('Submit'),
                         ),
                       ],
                     ),
@@ -429,33 +554,75 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               ),
               const Divider(height: 32, thickness: 1),
               ExpansionTile(
-                title: const Text('Change Ticket Details', style: TextStyle(fontWeight: FontWeight.bold)),
+                title: const Text(
+                  'Change Ticket Details',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 tilePadding: EdgeInsets.zero,
                 initiallyExpanded: false,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8.0,
+                      vertical: 8.0,
+                    ),
                     child: Column(
                       children: [
                         _buildStatusEditorRow(),
                         const SizedBox(height: 8),
-                        _buildDropdownRow(label: 'Category:', value: _selectedCategory, items: widget.allCategories, onChanged: (v) => setState(() { if (v != null) _selectedCategory = v; })),
-                        _buildDropdownRow(label: 'Priority:', value: _selectedPriority, items: _priorityOptions, onChanged: (v) => setState(() { if (v != null) _selectedPriority = v; }), prefixIcon: Icon(Icons.flag, color: _getPriorityColor(_selectedPriority), size: 20)),
-                        _buildDropdownRow(label: 'Assigned to:', value: _assignedTo, items: widget.allTeamMembers, onChanged: (v) => setState(() { if (v != null) _assignedTo = v; })),
+                        _buildDropdownRow(
+                          label: 'Category:',
+                          value: _selectedCategory,
+                          items: widget.allCategories,
+                          onChanged: (v) => setState(() {
+                            if (v != null) _selectedCategory = v;
+                          }),
+                        ),
+                        _buildDropdownRow(
+                          label: 'Priority:',
+                          value: _selectedPriority,
+                          items: _priorityOptions,
+                          onChanged: (v) => setState(() {
+                            if (v != null) _selectedPriority = v;
+                          }),
+                          prefixIcon: Icon(
+                            Icons.flag,
+                            color: _getPriorityColor(_selectedPriority),
+                            size: 20,
+                          ),
+                        ),
+                        _buildDropdownRow(
+                          label: 'Assigned to:',
+                          value: _assignedTo,
+                          items: widget.allTeamMembers,
+                          onChanged: (v) => setState(() {
+                            if (v != null) _assignedTo = v;
+                          }),
+                        ),
                       ],
                     ),
-                  )
+                  ),
                 ],
               ),
             ] else ...[
               Container(
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.green.shade200)),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
                 child: Row(
                   children: [
                     Icon(Icons.check_circle, color: Colors.green.shade700),
                     const SizedBox(width: 12),
-                    Text('This ticket has been resolved.', style: TextStyle(color: Colors.green.shade800, fontWeight: FontWeight.bold)),
+                    Text(
+                      'This ticket has been resolved.',
+                      style: TextStyle(
+                        color: Colors.green.shade800,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -470,15 +637,27 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Status: $_selectedStatus', style: TextStyle(color: _getStatusColor(_selectedStatus), fontWeight: FontWeight.bold)),
+        Text(
+          'Status: $_selectedStatus',
+          style: TextStyle(
+            color: _getStatusColor(_selectedStatus),
+            fontWeight: FontWeight.bold,
+          ),
+        ),
         const SizedBox(height: 4),
-        Text('Contact: ${widget.ticket.requesterName}', style: TextStyle(color: Colors.grey.shade600)),
+        Text(
+          'Contact: ${widget.ticket.requesterName}',
+          style: TextStyle(color: Colors.grey.shade600),
+        ),
         const SizedBox(height: 2),
-        Text('ID: #${widget.ticket.trackid}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+        Text(
+          'ID: #${widget.ticket.trackid}',
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+        ),
       ],
     );
   }
-  
+
   Widget _buildActionShortcuts() {
     return Wrap(
       spacing: 8.0,
@@ -505,18 +684,32 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Widget _buildTicketDetailsCard() {
     return Card(
       elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: Colors.grey.shade200)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        title: const Text('Ticket Details', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        title: const Text(
+          'Ticket Details',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
         tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         initiallyExpanded: true,
         children: [
           _buildDetailRow('Tracking ID:', widget.ticket.trackid),
           _buildDetailRow('Ticket number:', widget.ticket.id.toString()),
-          _buildDetailRow('Created on:', DateFormat('yyyy-MM-dd HH:mm:ss').format(widget.ticket.creationDate)),
-          _buildDetailRow('Updated:', DateFormat('yyyy-MM-dd HH:mm:ss').format(widget.ticket.lastChange)),
+          _buildDetailRow(
+            'Created on:',
+            DateFormat(
+              'yyyy-MM-dd HH:mm:ss',
+            ).format(widget.ticket.creationDate),
+          ),
+          _buildDetailRow(
+            'Updated:',
+            DateFormat('yyyy-MM-dd HH:mm:ss').format(widget.ticket.lastChange),
+          ),
           _buildDetailRow('Replies:', widget.ticket.replies.toString()),
           _buildDetailRow('Last replier:', widget.ticket.lastReplierText),
           _buildEditableInfoRow(
@@ -526,9 +719,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           ),
           _buildEditableInfoRow(
             label: 'Due date:',
-            value: _dueDate != null ? DateFormat('yyyy-MM-dd HH:mm:ss').format(_dueDate!) : 'None',
+            value: _dueDate != null
+                ? DateFormat('yyyy-MM-dd HH:mm:ss').format(_dueDate!)
+                : 'None',
             onTap: _showDueDateEditor,
-            onClear: _dueDate != null ? () => setState(() => _dueDate = null) : null,
+            onClear: _dueDate != null
+                ? () => setState(() => _dueDate = null)
+                : null,
           ),
         ],
       ),
@@ -548,7 +745,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  Widget _buildEditableInfoRow({required String label, required String value, VoidCallback? onTap, VoidCallback? onClear}) {
+  Widget _buildEditableInfoRow({
+    required String label,
+    required String value,
+    VoidCallback? onTap,
+    VoidCallback? onClear,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: InkWell(
@@ -562,9 +764,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               Text(label, style: TextStyle(color: Colors.grey.shade700)),
               Row(
                 children: [
-                  if(onClear != null && !_isResolved)
+                  if (onClear != null && !_isResolved)
                     IconButton(
-                      icon: const Icon(Icons.clear, size: 16, color: Colors.grey),
+                      icon: const Icon(
+                        Icons.clear,
+                        size: 16,
+                        color: Colors.grey,
+                      ),
                       onPressed: onClear,
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -573,27 +779,34 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                     value,
                     style: TextStyle(
                       fontWeight: FontWeight.w500,
-                      color: onTap != null && !_isResolved ? Theme.of(context).primaryColor : null,
-                      decoration: onTap != null && !_isResolved ? TextDecoration.underline : null,
+                      color: onTap != null && !_isResolved
+                          ? Theme.of(context).primaryColor
+                          : null,
+                      decoration: onTap != null && !_isResolved
+                          ? TextDecoration.underline
+                          : null,
                       decorationStyle: TextDecorationStyle.dotted,
                     ),
                   ),
                 ],
-              )
+              ),
             ],
           ),
         ),
       ),
     );
   }
-  
+
   Widget _buildCollapsibleDescription() {
     return ExpansionTile(
       title: Row(
         children: [
           Icon(Icons.description_outlined, color: Colors.blue.shade700),
           const SizedBox(width: 8),
-          const Text('Deskripsi Permasalahan', style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text(
+            'Deskripsi Permasalahan',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
         ],
       ),
       tilePadding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -601,11 +814,17 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       initiallyExpanded: true,
       children: [
         Align(
-            alignment: Alignment.centerLeft,
-            child: Html(
-              data: widget.ticket.message,
-              style: {"body": Style(fontSize: FontSize(15.0), lineHeight: LineHeight.em(1.4))},
-            )),
+          alignment: Alignment.centerLeft,
+          child: Html(
+            data: widget.ticket.message,
+            style: {
+              "body": Style(
+                fontSize: FontSize(15.0),
+                lineHeight: LineHeight.em(1.4),
+              ),
+            },
+          ),
+        ),
       ],
     );
   }
@@ -616,15 +835,27 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         children: [
           Icon(Icons.history_edu_outlined, color: Colors.grey.shade700),
           const SizedBox(width: 8),
-          Text('Riwayat Balasan (${_replies.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+          Text(
+            'Riwayat Balasan (${_replies.length})',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
         ],
       ),
       tilePadding: const EdgeInsets.symmetric(horizontal: 16.0),
       children: [
         if (_isLoadingDetails)
-          const Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator())
+          const Padding(
+            padding: EdgeInsets.all(16.0),
+            child: CircularProgressIndicator(),
+          )
         else if (_replies.isEmpty)
-          const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 16), child: Text('Belum ada balasan.', style: TextStyle(fontStyle: FontStyle.italic)))
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Text(
+              'Belum ada balasan.',
+              style: TextStyle(fontStyle: FontStyle.italic),
+            ),
+          )
         else
           ListView.separated(
             shrinkWrap: true,
@@ -640,14 +871,28 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Reply by ${reply.name}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                      Text(DateFormat('d MMM yy, HH:mm').format(reply.date), style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                      Text(
+                        'Reply by ${reply.name}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        DateFormat('d MMM yy, HH:mm').format(reply.date),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Html(
                     data: reply.message,
-                    style: {"body": Style(fontSize: FontSize(15.0), lineHeight: LineHeight.em(1.4))},
+                    style: {
+                      "body": Style(
+                        fontSize: FontSize(15.0),
+                        lineHeight: LineHeight.em(1.4),
+                      ),
+                    },
                   ),
                 ],
               );
@@ -660,15 +905,38 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Widget _buildTimeWorkedBar() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.blue.shade100)),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade100),
+      ),
       child: Row(
         children: [
-          const Text('Time worked:', style: TextStyle(fontWeight: FontWeight.bold)),
+          const Text(
+            'Time worked:',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(width: 8),
-          Text(_formatDuration(_workedDuration), style: const TextStyle(fontFamily: 'monospace', fontSize: 16)),
+          Text(
+            _formatDuration(_workedDuration),
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 16),
+          ),
           const Spacer(),
-          IconButton(icon: Icon(_isStopwatchRunning ? Icons.pause_circle_outline : Icons.play_circle_outline), onPressed: _isResolved ? null : _toggleStopwatch, tooltip: _isStopwatchRunning ? 'Stop Timer' : 'Start Timer', color: Theme.of(context).primaryColor),
-          IconButton(icon: const Icon(Icons.edit_outlined), onPressed: _isResolved ? null : _showTimeWorkedEditor, tooltip: 'Edit Time Worked'),
+          IconButton(
+            icon: Icon(
+              _isStopwatchRunning
+                  ? Icons.pause_circle_outline
+                  : Icons.play_circle_outline,
+            ),
+            onPressed: _isResolved ? null : _toggleStopwatch,
+            tooltip: _isStopwatchRunning ? 'Stop Timer' : 'Start Timer',
+            color: Theme.of(context).primaryColor,
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: _isResolved ? null : _showTimeWorkedEditor,
+            tooltip: 'Edit Time Worked',
+          ),
         ],
       ),
     );
@@ -677,13 +945,32 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   Widget _buildStatusEditorRow() {
     return Row(
       children: [
-        const SizedBox(width: 110, child: Text('Ticket status:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+        const SizedBox(
+          width: 110,
+          child: Text(
+            'Ticket status:',
+            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+          ),
+        ),
         Expanded(
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
               value: _selectedStatus,
               isExpanded: true,
-              items: _statusOptions.map((String item) => DropdownMenuItem<String>(value: item, child: Text(item, style: TextStyle(color: _getStatusColor(item), fontWeight: FontWeight.bold)))).toList(),
+              items: _statusOptions
+                  .map(
+                    (String item) => DropdownMenuItem<String>(
+                      value: item,
+                      child: Text(
+                        item,
+                        style: TextStyle(
+                          color: _getStatusColor(item),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
               onChanged: (v) {
                 if (v != null) {
                   setState(() {
@@ -699,22 +986,38 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  Widget _buildDropdownRow({required String label, required String value, required List<String> items, required ValueChanged<String?> onChanged, Widget? prefixIcon}) {
+  Widget _buildDropdownRow({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    Widget? prefixIcon,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         children: [
-          SizedBox(width: 110, child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
-          if (prefixIcon != null) ...[
-            prefixIcon,
-            const SizedBox(width: 8),
-          ],
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+          ),
+          if (prefixIcon != null) ...[prefixIcon, const SizedBox(width: 8)],
           Expanded(
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: value,
                 isExpanded: true,
-                items: items.map((String item) => DropdownMenuItem<String>(value: item, child: Text(item, overflow: TextOverflow.ellipsis))).toList(),
+                items: items
+                    .map(
+                      (String item) => DropdownMenuItem<String>(
+                        value: item,
+                        child: Text(item, overflow: TextOverflow.ellipsis),
+                      ),
+                    )
+                    .toList(),
                 onChanged: _isResolved ? null : onChanged,
               ),
             ),

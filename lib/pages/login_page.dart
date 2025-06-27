@@ -63,36 +63,40 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   void _loadCredentials() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    // Gunakan 'user_username' yang kita simpan dari server
-    final String? username = prefs.getString('user_username'); 
-    final bool rememberMe = prefs.getBool('rememberMe') ?? true;
+    final bool rememberMe = prefs.getBool('rememberMe') ?? false;
 
-    if (rememberMe && username != null) {
+    if (rememberMe) {
+      final String? username = prefs.getString('saved_username');
       setState(() {
-        _usernameController.text = username;
+        if (username != null) {
+          _usernameController.text = username;
+        }
         _rememberMe = rememberMe;
       });
     }
   }
 
-  // --- PERUBAHAN: Fungsi ini sekarang menerima data pengguna dari API ---
-  Future<void> _saveOrClearCredentials(Map<String, dynamic>? userData) async {
+  // --- PERBAIKAN: Logika penyimpanan data dipisah ---
+  Future<void> _saveSessionData(Map<String, dynamic> userData) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    if (_rememberMe && userData != null) {
-      await prefs.setBool('isLoggedIn', true);
-      // Simpan semua data penting dari server
-      await prefs.setInt('user_id', userData['id']);
-      await prefs.setString('user_name', userData['name']);
-      await prefs.setString('user_username', userData['username']);
-      await prefs.setString('user_email', userData['email']);
-      await prefs.setBool('rememberMe', true);
+
+    // Data ini selalu disimpan untuk sesi saat ini
+    await prefs.setBool('isLoggedIn', true);
+    await prefs.setInt('user_id', userData['id']);
+    await prefs.setString('user_name', userData['name']);
+    await prefs.setString('user_email', userData['email']);
+
+    // Logika untuk "Remember Me"
+    await prefs.setBool('rememberMe', _rememberMe);
+    if (_rememberMe) {
+      // Hanya simpan username jika "Remember Me" aktif
+      await prefs.setString('saved_username', userData['username']);
     } else {
-      // Menghapus semua data jika tidak "remember me"
-      await prefs.clear();
-      await prefs.setBool('isLoggedIn', false); // Tetap set isLoggedIn ke false
+      // Hapus username jika tidak aktif
+      await prefs.remove('saved_username');
     }
   }
-  
+
   void _handleLogin() async {
     HapticFeedback.lightImpact();
 
@@ -103,7 +107,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         _errorMessage = null;
       });
 
-      final url = Uri.parse('http://localhost:8080/anri_helpdesk_api/login.php');
+      final url = Uri.parse('http://localhost/anri_helpdesk_api/login.php');
 
       try {
         final response = await http
@@ -117,40 +121,45 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             )
             .timeout(const Duration(seconds: 10));
 
-        if (response.statusCode == 200) {
+        if (mounted && response.statusCode == 200) {
           final responseData = json.decode(response.body);
 
           if (responseData['success']) {
-            // --- PERUBAHAN UTAMA DI SINI ---
-            // 1. Ambil data user dari response API
             final userData = responseData['user_data'] as Map<String, dynamic>;
             final String currentUserName = userData['name'];
 
-            // 2. Simpan semua data pengguna yang relevan
-            await _saveOrClearCredentials(userData);
+            // Panggil fungsi penyimpanan yang baru
+            await _saveSessionData(userData);
 
             if (mounted) {
-              // 3. Kirim nama pengguna ke HomePage
               Navigator.pushReplacement(
                 context,
-                MaterialPageRoute(builder: (context) => HomePage(currentUserName: currentUserName)),
+                MaterialPageRoute(
+                  builder: (context) =>
+                      HomePage(currentUserName: currentUserName),
+                ),
               );
             }
           } else {
             setState(() {
-              _errorMessage = responseData['message'] ?? 'Username atau password salah.';
+              _errorMessage =
+                  responseData['message'] ?? 'Username atau password salah.';
             });
           }
-        } else {
+        } else if (mounted) {
           setState(() {
-            _errorMessage = 'Gagal terhubung ke server (Error: ${response.statusCode})';
+            _errorMessage =
+                'Gagal terhubung ke server (Error: ${response.statusCode})';
           });
         }
       } catch (e) {
         debugPrint('Login Error: $e');
-        setState(() {
-          _errorMessage = 'Tidak dapat terhubung. Periksa koneksi atau hubungi admin.';
-        });
+        if (mounted) {
+          setState(() {
+            _errorMessage =
+                'Tidak dapat terhubung. Periksa koneksi atau hubungi admin.';
+          });
+        }
       } finally {
         if (mounted) {
           setState(() {
@@ -245,13 +254,16 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                             controller: _usernameController,
                             keyboardType: TextInputType.text,
                             textInputAction: TextInputAction.next,
-                            onFieldSubmitted: (_) =>
-                                FocusScope.of(context).requestFocus(_passwordFocusNode),
+                            onFieldSubmitted: (_) => FocusScope.of(
+                              context,
+                            ).requestFocus(_passwordFocusNode),
                             decoration: const InputDecoration(
-                              labelText: 'Username / NIP',
-                              hintText: 'Enter your Username or NIP',
+                              labelText: 'Username',
+                              hintText: 'Enter your Username',
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.all(Radius.circular(12)),
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(12),
+                                ),
                               ),
                               prefixIcon: Icon(Icons.person),
                               filled: true,
@@ -259,7 +271,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                             ),
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return 'Username or NIP cannot be empty';
+                                return 'Username cannot be empty';
                               }
                               return null;
                             },
@@ -275,7 +287,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                               labelText: 'Password',
                               hintText: 'Enter your Password',
                               border: const OutlineInputBorder(
-                                borderRadius: BorderRadius.all(Radius.circular(12)),
+                                borderRadius: BorderRadius.all(
+                                  Radius.circular(12),
+                                ),
                               ),
                               prefixIcon: const Icon(Icons.lock),
                               suffixIcon: IconButton(
@@ -285,7 +299,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                       : Icons.visibility_off,
                                 ),
                                 onPressed: () => setState(
-                                  () => _isPasswordVisible = !_isPasswordVisible,
+                                  () =>
+                                      _isPasswordVisible = !_isPasswordVisible,
                                 ),
                               ),
                               filled: true,
@@ -350,7 +365,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                                   borderRadius: BorderRadius.circular(12),
                                 ),
                                 elevation: 8,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                               ),
                               child: _isLoading
                                   ? const CircularProgressIndicator(
