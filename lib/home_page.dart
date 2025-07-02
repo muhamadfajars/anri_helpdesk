@@ -88,24 +88,29 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
+enum ListState { loading, error, empty, hasData }
+
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 0;
   String _selectedCategory = 'All';
   String _selectedStatus = 'New';
-  String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
-
+  final FocusNode _searchFocusNode = FocusNode(); // FocusNode tetap kita gunakan
   Timer? _debounce;
+  Timer? _autoRefreshTimer;
 
-  List<Ticket> _tickets = [];
+  // --- PERUBAHAN UTAMA: Memisahkan state list dari state utama ---
+  final ValueNotifier<List<Ticket>> _ticketsNotifier = ValueNotifier([]);
+  final ValueNotifier<ListState> _listStateNotifier =
+      ValueNotifier(ListState.loading);
+  final ValueNotifier<bool> _isLoadingMoreNotifier = ValueNotifier(false);
+  // ----------------------------------------------------------------
+
   int _currentPage = 1;
-  bool _isLoading = true;
-  bool _isLoadingMore = false;
   bool _hasMore = true;
-  String? _error;
+  String _searchQuery = '';
 
   final ScrollController _scrollController = ScrollController();
-  Timer? _autoRefreshTimer;
   final GlobalKey _headerFilterKey = GlobalKey();
   bool _isFabVisible = false;
   List<String> _teamMembers = ['Unassigned'];
@@ -157,12 +162,18 @@ class _HomePageState extends State<HomePage> {
     _fetchInitialData();
 
     _searchController.addListener(() {
-      setState(() {});
+      // Cek apakah status 'kosong' berubah untuk update tombol clear.
+      // Panggilan setState minimal ini tidak akan menghilangkan fokus.
+      if ((_searchController.text.isEmpty && _searchQuery.isNotEmpty) ||
+          (_searchController.text.isNotEmpty && _searchQuery.isEmpty)) {
+        setState(() {});
+      }
+      
+      _searchQuery = _searchController.text;
+
       if (_debounce?.isActive ?? false) _debounce!.cancel();
       _debounce = Timer(const Duration(milliseconds: 500), () {
-        if (_searchQuery != _searchController.text) {
-          _triggerSearch();
-        }
+        _fetchInitialTickets();
       });
     });
 
@@ -183,17 +194,20 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _fetchInitialData() async {
-    setState(() => _isLoading = true);
+    // _listStateNotifier sudah di-set loading, jadi langsung fetch
     await Future.wait([_fetchTeamMembers(), _fetchTickets(page: 1)]);
-    if (mounted) setState(() => _isLoading = false);
   }
 
   @override
   void dispose() {
     _scrollController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     _autoRefreshTimer?.cancel();
     _debounce?.cancel();
+    _ticketsNotifier.dispose();
+    _listStateNotifier.dispose();
+    _isLoadingMoreNotifier.dispose();
     super.dispose();
   }
 
@@ -210,21 +224,26 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _startAutoRefreshTimer() {
-    _autoRefreshTimer?.cancel(); // Hentikan timer lama jika ada
+    _autoRefreshTimer?.cancel();
     _autoRefreshTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      // --- KONDISI BARU DITAMBAHKAN DI SINI ---
-      // Auto-refresh hanya berjalan jika kita ada di halaman pertama (_currentPage == 1)
+      // --- PERBAIKAN DI SINI ---
+      // Tambahkan kondisi '_currentPage == 1'.
+      // Artinya, auto-refresh hanya akan berjalan jika Anda sedang berada di halaman pertama.
       if (_currentPage == 1 &&
           _selectedIndex != 2 &&
+          _searchController.text.isEmpty &&
           mounted &&
-          !_isLoading &&
-          !_isLoadingMore) {
-        _fetchInitialTickets();
+          _listStateNotifier.value != ListState.loading &&
+          !_isLoadingMoreNotifier.value) {
+            
+        // Panggil fungsi refresh yang senyap
+        _silentRefreshTickets();
       }
     });
   }
 
   Future<void> _fetchTeamMembers() async {
+    // ... (fungsi ini tidak berubah)
     final headers = await _getAuthHeaders();
     if (headers.isEmpty && mounted) return;
     try {
@@ -255,97 +274,88 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _triggerSearch() {
-    if (_searchQuery != _searchController.text) {
-      setState(() {
-        _searchQuery = _searchController.text;
-      });
-    }
+    // Fungsi ini sekarang lebih sederhana, hanya memanggil fetch.
     _fetchInitialTickets();
   }
 
+  // --- LOGIKA FETCH DATA DIPERBARUI TOTAL ---
+
   Future<void> _fetchInitialTickets() async {
-    if (_tickets.isEmpty) {
-      setState(() => _isLoading = true);
-    }
-    setState(() {
-      _currentPage = 1;
-      _hasMore = true;
-      _error = null;
-    });
+    _listStateNotifier.value = ListState.loading;
+    _currentPage = 1;
+    _hasMore = true;
     await _fetchTickets(page: 1);
-    if (mounted) {
-      setState(() => _isLoading = false);
-    }
   }
 
   Future<void> _loadMoreTickets() async {
-    if (_isLoadingMore || !_hasMore) return;
-    setState(() => _isLoadingMore = true);
+    if (_isLoadingMoreNotifier.value || !_hasMore) return;
+    _isLoadingMoreNotifier.value = true;
     _currentPage++;
     await _fetchTickets(page: _currentPage);
-    if (mounted) {
-      setState(() => _isLoadingMore = false);
-    }
+    _isLoadingMoreNotifier.value = false;
   }
 
   Future<void> _fetchTickets({required int page}) async {
     final headers = await _getAuthHeaders();
     if (headers.isEmpty) return;
+
     String statusForAPI = _selectedStatus;
     if (_selectedIndex == 1) {
       statusForAPI = 'Resolved';
     } else if (_selectedStatus == 'Semua Status') {
       statusForAPI = 'All';
     }
+
     final url = Uri.parse(
-      '$baseUrl/get_tickets.php?status=$statusForAPI&category=$_selectedCategory&page=$page&search=$_searchQuery',
+      '$baseUrl/get_tickets.php?status=$statusForAPI&category=$_selectedCategory&page=$page&search=${_searchController.text}',
     );
+
     try {
       final response = await http
           .get(url, headers: headers)
           .timeout(const Duration(seconds: 20));
-      if (response.statusCode == 401) {
-        if (mounted) {
-          _logout(
-            context,
-            message: 'Sesi Anda tidak valid. Silakan login kembali.',
-          );
-        }
+
+      if (response.statusCode == 401 && mounted) {
+        _logout(context, message: 'Sesi tidak valid. Silakan login kembali.');
         return;
       }
       if (response.statusCode == 200 && mounted) {
-        final Map<String, dynamic> responseData = json.decode(response.body);
-        if (responseData['success'] == true) {
-          final List<dynamic> ticketData = responseData['data'];
-          final List<Ticket> newTickets = ticketData
-              .map((json) => Ticket.fromJson(json as Map<String, dynamic>))
+        final data = json.decode(response.body);
+        if (data['success'] == true) {
+          final newTickets = (data['data'] as List)
+              .map((json) => Ticket.fromJson(json))
               .toList();
-          setState(() {
-            if (page == 1) {
-              _tickets = newTickets;
-            } else {
-              _tickets.addAll(newTickets);
-            }
-            if (newTickets.length < 10) {
-              _hasMore = false;
-            }
-          });
+
+          if (page == 1) {
+            _ticketsNotifier.value = newTickets;
+          } else {
+            _ticketsNotifier.value = [
+              ..._ticketsNotifier.value,
+              ...newTickets
+            ];
+          }
+
+          _hasMore = newTickets.length >= 10;
+
+          if (_ticketsNotifier.value.isEmpty) {
+            _listStateNotifier.value = ListState.empty;
+          } else {
+            _listStateNotifier.value = ListState.hasData;
+          }
         } else {
-          throw Exception(responseData['message'] ?? 'Gagal mengambil data');
+          throw Exception(data['message'] ?? 'Gagal memuat data');
         }
       } else {
         throw Exception(
-          'Gagal terhubung ke server (Kode: ${response.statusCode})',
-        );
+            'Gagal terhubung ke server (Kode: ${response.statusCode})');
       }
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = 'Tidak dapat terhubung. Periksa koneksi Anda.');
-      }
+      _listStateNotifier.value = ListState.error;
     }
   }
 
   Future<void> _logout(BuildContext context, {String? message}) async {
+    // ... (fungsi ini tidak berubah)
     if (!mounted) return;
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.clear();
@@ -366,6 +376,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Color _getStatusColor(String status) {
+    // ... (fungsi ini tidak berubah)
     if (status == 'Semua Status') {
       return Colors.black87;
     }
@@ -388,6 +399,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _getPriorityIconPath(String priority) {
+    // ... (fungsi ini tidak berubah)
     switch (priority) {
       case 'Critical':
         return 'assets/images/label-critical.png';
@@ -403,6 +415,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Color _getPriorityColor(String priority) {
+    // ... (fungsi ini tidak berubah)
     switch (priority) {
       case 'Critical':
         return Colors.red.shade700;
@@ -416,13 +429,10 @@ class _HomePageState extends State<HomePage> {
         return Colors.grey.shade700;
     }
   }
-
-  // Ganti seluruh fungsi build di class _HomePageState dengan kode ini
-
+  
   @override
   Widget build(BuildContext context) {
-    // --- PERUBAIKAN DI SINI ---
-    // Dekorasi gradien yang persis sama dengan halaman login
+    // ... (fungsi build, _buildAppBarTitle, dan _showFilterDialog tidak berubah)
     const pageBackgroundDecoration = BoxDecoration(
       gradient: LinearGradient(
         colors: [
@@ -440,8 +450,8 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       appBar: AppBar(
         title: _buildAppBarTitle(),
-        backgroundColor: Colors.transparent, // Dibuat transparan agar menyatu
-        elevation: 0, // Hilangkan shadow
+        backgroundColor: Colors.transparent, 
+        elevation: 0, 
         actions: _selectedIndex == 0
             ? [
                 Center(
@@ -451,7 +461,7 @@ class _HomePageState extends State<HomePage> {
                       'Hi, ${widget.currentUserName}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.black87, // Ubah warna agar terlihat
+                        color: Colors.black87, 
                       ),
                     ),
                   ),
@@ -459,20 +469,16 @@ class _HomePageState extends State<HomePage> {
               ]
             : null,
       ),
-      // Menggunakan Stack agar AppBar bisa transparan di atas gradien
       body: Stack(
         children: [
-          // Lapisan Latar Belakang Gradien
           Container(
             decoration: _selectedIndex != 2 ? pageBackgroundDecoration : null,
-            // Memberi warna abu-abu untuk background profil
             color: _selectedIndex == 2 ? Colors.grey[100] : null,
           ),
-          // Konten utama halaman
           _buildBody(),
         ],
       ),
-      extendBodyBehindAppBar: true, // Membuat body berada di belakang AppBar
+      extendBodyBehindAppBar: true, 
       floatingActionButton: _selectedIndex != 2 && _isFabVisible
           ? FloatingActionButton(
               onPressed: _showFilterDialog,
@@ -493,13 +499,11 @@ class _HomePageState extends State<HomePage> {
           }
         },
         items: const [
-          // --- PERUBAHAN IKON DI SINI ---
           BottomNavigationBarItem(
             icon: Icon(Icons.home_outlined),
             activeIcon: Icon(Icons.home),
             label: 'Beranda',
           ),
-          // --------------------------------
           BottomNavigationBarItem(
             icon: Icon(Icons.history_outlined),
             activeIcon: Icon(Icons.history),
@@ -516,8 +520,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildAppBarTitle() {
+    // ... (fungsi ini tidak berubah)
     switch (_selectedIndex) {
       case 0:
+      case 1:
         return Row(
           children: [
             Image.asset(
@@ -526,7 +532,6 @@ class _HomePageState extends State<HomePage> {
               filterQuality: FilterQuality.high,
             ),
             const SizedBox(width: 12),
-            // --- PERUBAHAN UTAMA DI SINI ---
             ShaderMask(
               blendMode: BlendMode.srcIn,
               shaderCallback: (bounds) => const LinearGradient(
@@ -541,7 +546,6 @@ class _HomePageState extends State<HomePage> {
               child: const Text(
                 'Help Desk',
                 style: TextStyle(
-                  // Ukuran font disesuaikan agar pas di AppBar
                   fontSize: 21,
                   fontWeight: FontWeight.bold,
                 ),
@@ -549,34 +553,56 @@ class _HomePageState extends State<HomePage> {
             ),
           ],
         );
-      case 1:
-        return const Text('Riwayat Tiket Selesai');
       case 2:
-        return const Text('Profil');
+        return const SizedBox.shrink();
       default:
         return const Text('Help Desk');
     }
   }
 
   Widget _buildBody() {
+    // --- BUILD BODY SEKARANG MENGGUNAKAN VALUENOTIFIER ---
     switch (_selectedIndex) {
       case 0:
       case 1:
-        if (_isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        if (_error != null) {
-          return _buildErrorState(_error!);
-        }
-        return _buildTicketList();
+        return Padding(
+          padding: EdgeInsets.only(
+            top: kToolbarHeight + MediaQuery.of(context).padding.top,
+          ),
+          child: Column(
+            children: [
+              _buildHeaderFilterBar(), // Header tetap di luar
+              Expanded(
+                // Area list sekarang dibungkus ValueListenableBuilder
+                child: ValueListenableBuilder<ListState>(
+                  valueListenable: _listStateNotifier,
+                  builder: (context, state, child) {
+                    switch (state) {
+                      case ListState.loading:
+                        return const Center(child: CircularProgressIndicator());
+                      case ListState.error:
+                        return _buildErrorState(
+                            'Tidak dapat terhubung. Periksa koneksi Anda.');
+                      case ListState.empty:
+                        return _buildEmptyState();
+                      case ListState.hasData:
+                        return _buildTicketList();
+                    }
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
       case 2:
         return const ProfilePage();
       default:
-        return _buildTicketList();
+        return const SizedBox.shrink();
     }
   }
 
   Widget _buildHeaderFilterBar() {
+    // ... (fungsi ini tidak berubah, FocusNode sudah ditambahkan)
     return Container(
       key: _headerFilterKey,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -588,6 +614,7 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: TextField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode, // Pastikan ini ada
                   decoration: InputDecoration(
                     hintText: 'Cari tiket...',
                     prefixIcon: const Icon(Icons.search),
@@ -676,6 +703,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showFilterDialog() {
+    // ... (fungsi ini tidak berubah)
     String tempCategory = _selectedCategory;
     String tempStatus = _selectedStatus;
 
@@ -793,47 +821,32 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Ganti fungsi _buildTicketList di class _HomePageState dengan kode ini
-
   Widget _buildTicketList() {
-    // Menambahkan padding di atas untuk memberi ruang bagi AppBar yang transparan
-    return Padding(
-      padding: EdgeInsets.only(
-        // kToolbarHeight adalah tinggi standar AppBar
-        // MediaQuery.of(context).padding.top adalah tinggi status bar (jam, sinyal, dll)
-        top: kToolbarHeight + MediaQuery.of(context).padding.top,
-      ),
-      child: RefreshIndicator(
-        onRefresh: _fetchInitialTickets,
-        child: CustomScrollView(
-          controller: _scrollController,
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeaderFilterBar()),
-            if (_tickets.isEmpty && !_isLoading)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: _buildEmptyState(),
-              )
-            else
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 80),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate((context, index) {
-                    if (index < _tickets.length) {
-                      return _buildTicketCard(_tickets[index]);
-                    } else {
-                      return _buildPaginationControl();
-                    }
-                  }, childCount: _tickets.length + 1),
-                ),
-              ),
-          ],
-        ),
+    // --- BUILD TICKET LIST SEKARANG HANYA FOKUS MENAMPILKAN DATA ---
+    return RefreshIndicator(
+      onRefresh: _fetchInitialTickets,
+      child: ValueListenableBuilder<List<Ticket>>(
+        valueListenable: _ticketsNotifier,
+        builder: (context, tickets, child) {
+          return ListView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 80),
+            itemCount: tickets.length + 1,
+            itemBuilder: (context, index) {
+              if (index < tickets.length) {
+                return _buildTicketCard(tickets[index]);
+              } else {
+                return _buildPaginationControl();
+              }
+            },
+          );
+        },
       ),
     );
   }
 
   Widget _buildTicketCard(Ticket ticket) {
+    // ... (fungsi ini tidak berubah)
     final DateFormat formatter = DateFormat('d MMM yy, HH:mm', 'id_ID');
     return Card(
       margin: const EdgeInsets.only(bottom: 12.0),
@@ -965,7 +978,6 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 8),
 
-              // --- PERUBAHAN FINAL TAMPILAN KATEGORI ---
               Text(
                 'Kategori: ${ticket.categoryName}',
                 style: TextStyle(
@@ -975,7 +987,7 @@ class _HomePageState extends State<HomePage> {
                     0,
                     0,
                     0,
-                  ), // Warna abu-abu yang soft
+                  ), 
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -1013,25 +1025,23 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildDetailRow(String label, String value) {
+    // ... (fungsi ini tidak berubah)
     return Row(
-      // Mengubah alignment agar label dan value sejajar di tengah secara vertikal
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         SizedBox(
-          // Melebarkan area untuk label agar tidak terpotong
           width: 112,
           child: Text(
             '$label:',
             style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
           ),
         ),
-        const SizedBox(width: 8), // Memberi sedikit spasi
+        const SizedBox(width: 8), 
         Expanded(
           child: Text(
             value,
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             textAlign: TextAlign.end,
-            // Mencegah teks turun dan menggantinya dengan "..." jika terlalu panjang
             overflow: TextOverflow.ellipsis,
             maxLines: 1,
           ),
@@ -1041,34 +1051,40 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildPaginationControl() {
-    if (_isLoadingMore) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16.0),
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-    if (_hasMore) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: Center(
-          child: FilledButton.icon(
-            onPressed: _loadMoreTickets,
-            icon: const Icon(Icons.add_circle_outline),
-            label: const Text('Tampilkan Lebih Banyak'),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Theme.of(context).primaryColor,
-              elevation: 2,
-            ),
-          ),
-        ),
-      );
-    }
-    return const SizedBox.shrink();
+    // --- PAGINATION CONTROL SEKARANG MENGGUNAKAN VALUENOTIFIER ---
+    return ValueListenableBuilder<bool>(
+        valueListenable: _isLoadingMoreNotifier,
+        builder: (context, isLoadingMore, child) {
+          if (isLoadingMore) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16.0),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (_hasMore) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: Center(
+                child: FilledButton.icon(
+                  onPressed: _loadMoreTickets,
+                  icon: const Icon(Icons.add_circle_outline),
+                  label: const Text('Tampilkan Lebih Banyak'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Theme.of(context).primaryColor,
+                    elevation: 2,
+                  ),
+                ),
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        });
   }
 
   Widget _buildEmptyState() {
-    bool isSearching = _searchQuery.isNotEmpty;
+    // ... (fungsi ini tidak berubah)
+    bool isSearching = _searchController.text.isNotEmpty;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -1113,7 +1129,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _silentRefreshTickets() async {
+    // Memastikan refresh senyap tidak berjalan jika ada proses lain (seperti load more)
+    if (_isLoadingMoreNotifier.value) return;
+
+    // Langsung panggil _fetchTickets untuk halaman pertama.
+    // Fungsi ini akan mengambil data dan memperbarui daftar tiket secara otomatis
+    // tanpa memicu indikator loading di seluruh layar.
+    await _fetchTickets(page: 1);
+  }
+
   Widget _buildErrorState(String error) {
+    // ... (fungsi ini tidak berubah)
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32.0),
