@@ -11,12 +11,20 @@ class Reply {
     required this.date,
   });
 
+  // GANTI FACTORY LAMA ANDA DENGAN KODE FACTORY BARU DI BAWAH INI
   factory Reply.fromJson(Map<String, dynamic> json) {
     return Reply(
-      id: json['id'] as int,
-      name: json['name'] ?? 'Unknown',
-      message: json['message'] ?? '',
-      date: DateTime.parse(json['dt']),
+      // Parsing aman untuk ID
+      id: json['id'] as int? ?? 0,
+
+      // Parsing aman untuk nama dan pesan
+      name: json['name']?.toString() ?? 'Unknown',
+      message: json['message']?.toString() ?? '',
+
+      // PERBAIKAN: Menggunakan kunci 'reply_date' dan metode tryParse yang aman
+      date:
+          DateTime.tryParse(json['reply_date']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 }

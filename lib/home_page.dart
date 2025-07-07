@@ -51,25 +51,30 @@ class Ticket {
 
   factory Ticket.fromJson(Map<String, dynamic> json) {
     return Ticket(
-      id: json['id'] as int,
-      trackid: json['trackid'] ?? 'N/A',
-      requesterName: json['requester_name'] ?? 'Unknown User',
-      subject: json['subject'] ?? 'No Subject',
-      message: json['message'] ?? '',
-      creationDate: DateTime.parse(json['creation_date']),
-      lastChange: DateTime.parse(json['lastchange']),
-      statusText: json['status_text'] ?? 'Unknown',
-      priorityText: json['priority_text'] ?? 'Unknown',
-      categoryName: json['category_name'] ?? 'Uncategorized',
-      ownerName: json['owner_name'] ?? 'Unassigned',
-      lastReplierText: json['last_replier_text'] ?? '-',
+      id: json['id'] as int? ?? 0,
+      trackid: json['trackid']?.toString() ?? 'N/A',
+      requesterName: json['requester_name']?.toString() ?? 'Unknown User',
+      subject: json['subject']?.toString() ?? 'No Subject',
+      message: json['message']?.toString() ?? '',
+      // Kode paling aman untuk tanggal
+      creationDate:
+          DateTime.tryParse(json['creation_date']?.toString() ?? '') ??
+          DateTime.now(),
+      lastChange:
+          DateTime.tryParse(json['lastchange']?.toString() ?? '') ??
+          DateTime.now(),
+      statusText: json['status_text']?.toString() ?? 'Unknown',
+      priorityText: json['priority_text']?.toString() ?? 'Unknown',
+      categoryName: json['category_name']?.toString() ?? 'Uncategorized',
+      ownerName: json['owner_name']?.toString() ?? 'Unassigned',
+      lastReplierText: json['last_replier_text']?.toString() ?? '-',
       replies: json['replies'] as int? ?? 0,
-      timeWorked: json['time_worked'] ?? '00:00:00',
+      timeWorked: json['time_worked']?.toString() ?? '00:00:00',
       dueDate: json['due_date'] != null
-          ? DateTime.parse(json['due_date'])
+          ? DateTime.tryParse(json['due_date'].toString())
           : null,
-      custom1: json['custom1'] ?? '-',
-      custom2: json['custom2'] ?? '-',
+      custom1: json['custom1']?.toString() ?? '-',
+      custom2: json['custom2']?.toString() ?? '-',
     );
   }
 }
@@ -795,7 +800,10 @@ class _HomePageState extends State<HomePage> {
                     OutlinedButton(
                       onPressed: () {
                         setDialogState(() {
-                          tempStatus = 'New';
+                          // Mengembalikan status ke kondisi awal saat dialog dibuka
+                          tempStatus = _selectedStatus;
+
+                          // Mengembalikan kategori ke "Semua Kategori"
                           tempCategory = 'All';
                         });
                       },
