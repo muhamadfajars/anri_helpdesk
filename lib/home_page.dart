@@ -153,7 +153,6 @@ class _HomePageState extends State<HomePage> {
   ];
 
   String get baseUrl {
- fix/perbaikan-final
     return '${ApiConfig.baseUrl}/anri_helpdesk_api';
   }
 
@@ -267,7 +266,6 @@ class _HomePageState extends State<HomePage> {
       if (response.statusCode == 200 && mounted) {
         final responseData = json.decode(response.body);
         if (responseData['success'] == true) {
-fix/perbaikan-final
           final List<dynamic> data = responseData['data'];
           final List<String> fetchedMembers = data
               .map((user) => user['name'].toString())
@@ -805,10 +803,26 @@ fix/perbaikan-final
                     OutlinedButton(
                       onPressed: () {
                         setDialogState(() {
-                          // Mengembalikan status ke kondisi awal saat dialog dibuka
-                          tempStatus = _selectedStatus;
+                          // Daftar status lanjutan yang hanya ada di dialog
+                          const advancedStatuses = {
+                            'Replied',
+                            'In Progress',
+                            'On Hold',
+                            'Resolved', // Tambahkan resolved jika perlu
+                          };
 
-                          // Mengembalikan kategori ke "Semua Kategori"
+                          // Logika baru untuk Atur Ulang Status
+                          // Jika status aktif saat ini adalah status lanjutan,
+                          // atur ulang ke 'New'.
+                          if (advancedStatuses.contains(_selectedStatus)) {
+                            tempStatus = 'New';
+                          } else {
+                            // Jika tidak, kembalikan ke status awal saat dialog dibuka
+                            // (Ini akan menangani kasus 'New', 'Waiting Reply', 'Semua Status')
+                            tempStatus = _selectedStatus;
+                          }
+
+                          // Atur ulang kategori selalu ke "Semua Kategori"
                           tempCategory = 'All';
                         });
                       },

@@ -32,6 +32,7 @@ class TicketDetailScreen extends StatefulWidget {
 class _TicketDetailScreenState extends State<TicketDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  bool _didStateChange = false;
 
   final _scrollController = ScrollController();
   Timer? _stopwatchTimer;
@@ -160,7 +161,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
   Future<void> _fetchTicketDetails() async {
     setState(() => _isLoadingDetails = true);
     final headers = await _getAuthHeaders();
-fix/perbaikan-final
     if (headers.isEmpty) {
       setState(() => _isLoadingDetails = false);
       return;
@@ -205,7 +205,6 @@ fix/perbaikan-final
 
   Future<void> _saveChanges() async {
     setState(() => _isSaving = true);
-fix/perbaikan-final
 
     final headers = await _getAuthHeaders();
     if (headers.isEmpty) {
@@ -225,7 +224,7 @@ fix/perbaikan-final
     };
     try {
       final response = await http.post(
-        Uri.parse('http://192.168.1.2/anri_helpdesk_api/update_ticket.php'),
+        Uri.parse('${ApiConfig.baseUrl}/anri_helpdesk_api/update_ticket.php'),
         headers: headers,
         body: body,
       );
@@ -238,7 +237,8 @@ fix/perbaikan-final
               backgroundColor: Colors.green,
             ),
           );
-          Navigator.pop(context, true);
+          _didStateChange = true; 
+          _fetchTicketDetails();
         } else {
           throw Exception(data['message'] ?? 'Gagal menyimpan perubahan.');
         }
@@ -265,8 +265,6 @@ fix/perbaikan-final
       return;
     }
     setState(() => _isSubmittingReply = true);
- fix/perbaikan-final
-
 
     final headers = await _getAuthHeaders();
     if (headers.isEmpty) {
@@ -274,37 +272,51 @@ fix/perbaikan-final
       return;
     }
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/anri_helpdesk_api/add_reply.php'),
-        headers: headers,
-        body: {
-          'ticket_id': widget.ticket.id.toString(),
-          'message': _replyMessageController.text,
-          'new_status': _submitAsAction,
-          'staff_id': '1',
-          'staff_name': widget.currentUserName,
-        },
+  final response = await http.post(
+    Uri.parse('${ApiConfig.baseUrl}/anri_helpdesk_api/add_reply.php'),
+    headers: headers,
+    body: {
+      'ticket_id': widget.ticket.id.toString(),
+      'message': _replyMessageController.text,
+      'new_status': _submitAsAction,
+      'staff_id': '1', // Ganti dengan ID staf dinamis jika perlu
+      'staff_name': widget.currentUserName,
+    },
+  );
+  if (mounted) {
+    final data = json.decode(response.body);
+    if (data['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Balasan berhasil dikirim!'),
+          backgroundColor: Colors.green,
+        ),
       );
-      if (mounted) {
-        final data = json.decode(response.body);
-        if (data['success'] == true) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Balasan berhasil dikirim!'),
-              backgroundColor: Colors.green,
-            ),
-          );
-          Navigator.pop(context, true);
-        } else {
-          throw Exception(data['message'] ?? 'Gagal mengirim balasan.');
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
-      }
+      _didStateChange = true;
+      
+      // Update UI secara lokal
+      setState(() {
+        // 1. Perbarui status tiket sesuai dengan yang di-submit
+        _selectedStatus = _submitAsAction;
+        // 2. Cek jika status berubah jadi Resolved
+        _isResolved = _submitAsAction == 'Resolved';
+        // 3. Kosongkan field input balasan
+        _replyMessageController.clear();
+      });
+      
+      // 4. Ambil daftar balasan terbaru dari server
+      _fetchTicketDetails();
+
+    } else {
+      throw Exception(data['message'] ?? 'Gagal mengirim balasan.');
+    }
+  }
+} catch (e) {
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+    );
+  }
     } finally {
       if (mounted) setState(() => _isSubmittingReply = false);
     }
@@ -486,8 +498,16 @@ fix/perbaikan-final
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
+Widget build(BuildContext context) {
+  // Bungkus Container/Scaffold Anda dengan WillPopScope
+  return WillPopScope(
+    onWillPop: () async {
+      // Saat tombol kembali ditekan, kirim nilai _didStateChange
+      Navigator.pop(context, _didStateChange);
+      // Kembalikan false agar tidak terjadi pop dua kali
+      return false;
+    },
+    child: Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -504,9 +524,16 @@ fix/perbaikan-final
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
+          // Modifikasi leading (tombol kembali) pada AppBar agar menggunakan logika WillPopScope juga
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () {
+              Navigator.pop(context, _didStateChange);
+            },
+          ),
           backgroundColor: Colors.white,
           elevation: 1,
-          title: Text(widget.ticket.subject, overflow: TextOverflow.ellipsis),
+          title: const Text('Detail Tiket'),
           bottom: TabBar(
             controller: _tabController,
             tabs: const [
@@ -520,8 +547,9 @@ fix/perbaikan-final
           children: [_buildDetailTab(), _buildReplyHistoryTab()],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildDetailTab() {
     return SingleChildScrollView(
@@ -808,6 +836,21 @@ fix/perbaikan-final
       title: "Informasi Kontak & Status",
       child: Column(
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12.0),
+              child: Text(
+                widget.ticket.subject,
+                textAlign: TextAlign.left, // Sebaiknya tetap ada untuk keamanan
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+            ),
+          ),
           _buildDetailRowWithIcon(
             Icons.bookmark_border,
             'Status',
