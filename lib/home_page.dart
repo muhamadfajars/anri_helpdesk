@@ -294,36 +294,16 @@ class _HomePageState extends State<HomePage> {
     );
 
     return Scaffold(
-      appBar: AppBar(
-        title: _buildAppBarTitle(),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: _selectedIndex == 0
-            ? [
-                Center(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 16.0),
-                    child: Text(
-                      'Hi, ${widget.currentUserName}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ),
-              ]
-            : null,
-      ),
+      // Hapus AppBar dari sini, karena kita akan menggunakan SliverAppBar
       body: Stack(
         children: [
-          Container(
-            decoration: _selectedIndex != 2 ? pageBackgroundDecoration : null,
-            color: _selectedIndex == 2
-                ? Theme.of(context).colorScheme.surfaceContainerLowest
-                : null,
-          ),
+          // Terapkan background hanya jika bukan di tab profil
+          if (_selectedIndex != 2)
+            Container(decoration: pageBackgroundDecoration),
           _buildBody(),
         ],
       ),
-      extendBodyBehindAppBar: true,
+      // FloatingActionButton dan BottomNavigationBar tetap sama
       floatingActionButton: _selectedIndex != 2 && _isFabVisible
           ? FloatingActionButton(
               onPressed: _showFilterDialog,
@@ -344,10 +324,8 @@ class _HomePageState extends State<HomePage> {
             });
             if (index != 2) {
               _triggerSearch();
-              // Mulai ulang timer jika kembali ke tab Home atau Riwayat untuk menerapkan interval baru
               _startAutoRefreshTimer();
             } else {
-              // Matikan timer jika pindah ke tab Profil
               _autoRefreshTimer?.cancel();
             }
           }
@@ -377,54 +355,75 @@ class _HomePageState extends State<HomePage> {
     switch (_selectedIndex) {
       case 0:
       case 1:
-        return Padding(
-          padding: EdgeInsets.only(
-            top: kToolbarHeight + MediaQuery.of(context).padding.top,
-          ),
-          child: Column(
-            children: [
-              _buildHeaderFilterBar(),
-              Expanded(
-                child: Consumer<TicketProvider>(
-                  builder: (context, provider, child) {
-                    switch (provider.listState) {
-                      case ListState.loading:
-                        return const Center(child: CircularProgressIndicator());
-                      case ListState.error:
-                        return _buildErrorState(provider.errorMessage);
-                      case ListState.empty:
-                        return _buildEmptyState();
-                      case ListState.hasData:
-                        return RefreshIndicator(
-                          onRefresh: () async => _triggerSearch(),
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            padding: const EdgeInsets.fromLTRB(0, 0, 0, 80),
-                            itemCount:
-                                provider.tickets.length +
-                                (provider.hasMore ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              if (index < provider.tickets.length) {
-                                final ticket = provider.tickets[index];
-                                return TicketCard(
-                                  ticket: ticket,
-                                  allCategories: _categories.entries
-                                      .where((e) => e.key != 'All')
-                                      .map((e) => e.value)
-                                      .toList(),
-                                  allTeamMembers: _teamMembers,
-                                  currentUserName: widget.currentUserName,
-                                  onRefresh: _triggerSearch,
-                                );
-                              } else {
-                                return _buildPaginationControl(provider);
-                              }
-                            },
+        return RefreshIndicator(
+          onRefresh: () async => _triggerSearch(),
+          child: CustomScrollView(
+            controller: _scrollController,
+            slivers: <Widget>[
+              SliverAppBar(
+                title: _buildAppBarTitle(),
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                elevation: 0.5,
+                pinned: true,
+                floating: true,
+                actions: _selectedIndex == 0
+                    ? [
+                        Center(
+                          child: Padding(
+                            padding: const EdgeInsets.only(right: 16.0),
+                            child: Text(
+                              'Hi, ${widget.currentUserName}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ),
-                        );
-                    }
-                  },
-                ),
+                        ),
+                      ]
+                    : null,
+              ),
+              SliverToBoxAdapter(child: _buildHeaderFilterBar()),
+              Consumer<TicketProvider>(
+                builder: (context, provider, child) {
+                  switch (provider.listState) {
+                    case ListState.loading:
+                      return const SliverFillRemaining(
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    case ListState.error:
+                      return SliverFillRemaining(
+                        child: _buildErrorState(provider.errorMessage),
+                      );
+                    case ListState.empty:
+                      return SliverFillRemaining(child: _buildEmptyState());
+
+                    case ListState.hasData:
+                      return SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            if (index < provider.tickets.length) {
+                              final ticket = provider.tickets[index];
+                              return TicketCard(
+                                ticket: ticket,
+                                allCategories: _categories.entries
+                                    .where((e) => e.key != 'All')
+                                    .map((e) => e.value)
+                                    .toList(),
+                                allTeamMembers: _teamMembers,
+                                currentUserName: widget.currentUserName,
+                                onRefresh: _triggerSearch,
+                              );
+                            } else {
+                              return _buildPaginationControl(provider);
+                            }
+                          },
+                          childCount:
+                              provider.tickets.length +
+                              (provider.hasMore ? 1 : 0),
+                        ),
+                      );
+                  }
+                },
               ),
             ],
           ),
@@ -530,7 +529,6 @@ class _HomePageState extends State<HomePage> {
                   // BARU: Tambahkan pengecekan tema
                   final isDarkMode =
                       Theme.of(context).brightness == Brightness.dark;
-
                   return Padding(
                     padding: const EdgeInsets.only(right: 8.0),
                     child: ChoiceChip(
@@ -553,17 +551,13 @@ class _HomePageState extends State<HomePage> {
                         color: isSelected
                             // Jika terpilih:
                             ? isDarkMode
-                                  ? Theme.of(context)
-                                        .colorScheme
-                                        .onPrimaryContainer // Gaya lama untuk tema gelap
-                                  : Theme.of(context)
-                                        .colorScheme
-                                        .primary // Gaya baru (biru) untuk tema terang
-                            // Jika tidak terpilih:
+                                  ? Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimaryContainer
+                                  : Theme.of(context).colorScheme.primary
                             : Theme.of(context).textTheme.bodyLarge?.color,
                         fontWeight: FontWeight.w500,
                       ),
-                      // DIUBAH: Logika garis pinggir dibuat kondisional
                       side: BorderSide(
                         color: isSelected
                             // Jika terpilih:
@@ -602,17 +596,24 @@ class _HomePageState extends State<HomePage> {
   void _showFilterDialog() {
     String tempCategory = _selectedCategory;
     String tempStatus = _selectedStatus;
-    String tempPriority = _selectedPriority; 
+    String tempPriority = _selectedPriority;
 
     Color getStatusColor(String status) {
       switch (status) {
-        case 'New': return const Color(0xFFD32F2F);
-        case 'Waiting Reply': return const Color(0xFFE65100);
-        case 'Replied': return const Color(0xFF1976D2);
-        case 'In Progress': return const Color(0xFF673AB7);
-        case 'On Hold': return const Color(0xFFC2185B);
-        case 'Resolved': return const Color(0xFF388E3C);
-        default: return Colors.grey.shade700;
+        case 'New':
+          return const Color(0xFFD32F2F);
+        case 'Waiting Reply':
+          return const Color(0xFFE65100);
+        case 'Replied':
+          return const Color(0xFF1976D2);
+        case 'In Progress':
+          return const Color(0xFF673AB7);
+        case 'On Hold':
+          return const Color(0xFFC2185B);
+        case 'Resolved':
+          return const Color(0xFF388E3C);
+        default:
+          return Colors.grey.shade700;
       }
     }
 
@@ -633,7 +634,10 @@ class _HomePageState extends State<HomePage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (_selectedIndex == 0) ...[
-                      Text('Status', style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        'Status',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                       const SizedBox(height: 4),
                       DropdownButtonFormField<String>(
                         value: tempStatus,
@@ -662,9 +666,10 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 16),
                     ],
-
-                    // Dropdown Prioritas
-                    Text('Prioritas', style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      'Prioritas',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
                       value: tempPriority,
@@ -685,7 +690,8 @@ class _HomePageState extends State<HomePage> {
                             children: [
                               Image.asset(
                                 _getPriorityIconPath(priority),
-                                width: 16, height: 16,
+                                width: 16,
+                                height: 16,
                                 color: _getPriorityColor(priority),
                               ),
                               const SizedBox(width: 8),
@@ -707,8 +713,11 @@ class _HomePageState extends State<HomePage> {
                       },
                     ),
                     const SizedBox(height: 16),
-                    
-                    Text('Kategori', style: Theme.of(context).textTheme.bodySmall),
+
+                    Text(
+                      'Kategori',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                     const SizedBox(height: 4),
                     DropdownButtonFormField<String>(
                       value: tempCategory,
@@ -717,12 +726,17 @@ class _HomePageState extends State<HomePage> {
                         border: OutlineInputBorder(),
                         contentPadding: EdgeInsets.symmetric(horizontal: 12),
                       ),
-                      items: _categories.entries.map((entry) => 
-                        DropdownMenuItem<String>(
-                          value: entry.key,
-                          child: Text(entry.value, overflow: TextOverflow.ellipsis),
-                        )
-                      ).toList(),
+                      items: _categories.entries
+                          .map(
+                            (entry) => DropdownMenuItem<String>(
+                              value: entry.key,
+                              child: Text(
+                                entry.value,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
                       onChanged: (newValue) {
                         if (newValue != null)
                           setDialogState(() => tempCategory = newValue);
@@ -754,12 +768,15 @@ class _HomePageState extends State<HomePage> {
                       onPressed: () {
                         setDialogState(() {
                           if (_selectedIndex == 0) {
-                            final bool isHeaderFilterActive = _statusHeaderFilters.contains(_selectedStatus);
-                            tempStatus = isHeaderFilterActive ? _selectedStatus : 'New';
+                            final bool isHeaderFilterActive =
+                                _statusHeaderFilters.contains(_selectedStatus);
+                            tempStatus = isHeaderFilterActive
+                                ? _selectedStatus
+                                : 'New';
                           }
-                          
+
                           // Selalu reset prioritas dan kategori
-                          tempPriority = 'All'; 
+                          tempPriority = 'All';
                           tempCategory = 'All';
                         });
                       },
@@ -873,7 +890,7 @@ class _HomePageState extends State<HomePage> {
               status: _getStatusForAPI(),
               category: _selectedCategory,
               searchQuery: _searchController.text,
-              priority: _selectedPriority, // <-- TAMBAHKAN INI
+              priority: _selectedPriority,
             );
           },
           icon: const Icon(Icons.add_circle_outline),

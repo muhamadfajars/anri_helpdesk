@@ -518,18 +518,24 @@ class DetailTabView extends StatelessWidget {
     bool isStatus = false,
     bool isPriority = false,
   }) {
+    // DIUBAH: Padding vertikal ditambah agar lebih lega
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
+        // DIUBAH: Menjamin item di dalam baris rata tengah secara vertikal
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Expanded(
+          // DIUBAH: Memberi lebar tetap pada label agar tidak berantakan
+          SizedBox(
+            width: 110, // Atur lebar kolom label
             child: Text(
               label,
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
             ),
           ),
+          const SizedBox(width: 8), // Memberi sedikit jarak
+          // DIUBAH: Dropdown dibiarkan mengisi sisa ruang yang ada
           Expanded(
-            flex: 2,
             child: DropdownButtonHideUnderline(
               child: DropdownButton<String>(
                 value: value,

@@ -77,7 +77,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-     _currentTicket = widget.ticket;
+    _currentTicket = widget.ticket;
     _initializeState();
     _refreshTicketData();
   }
@@ -148,7 +148,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     });
   }
 
-    Future<void> _refreshTicketData() async {
+  Future<void> _refreshTicketData() async {
     // Jangan tampilkan loading indicator jika hanya refresh biasa
     if (mounted) setState(() => _isLoadingDetails = true);
 
@@ -162,7 +162,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     );
 
     try {
-      final response = await http.get(url, headers: headers).timeout(const Duration(seconds: 15));
+      final response = await http
+          .get(url, headers: headers)
+          .timeout(const Duration(seconds: 15));
       if (!mounted) return;
 
       if (response.statusCode == 401) {
@@ -190,7 +192,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error saat refresh: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saat refresh: $e')));
       }
     } finally {
       if (mounted) setState(() => _isLoadingDetails = false);
@@ -329,12 +333,45 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
     _saveChanges();
   }
 
-  void _markAsResolved() {
-    setState(() {
-      _selectedStatus = 'Resolved';
-      _isResolved = true;
-    });
-    _saveChanges();
+  Future<void> _markAsResolved() async {
+    // Tampilkan dialog konfirmasi sebelum melanjutkan
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Konfirmasi Tiket Selesai'),
+          content: const Text(
+            'Apakah Anda yakin ingin menandai tiket ini sebagai "Selesai"?',
+          ),
+          actions: <Widget>[
+            // DIUBAH: Menggunakan OutlinedButton untuk tombol batal agar memiliki garis pinggir
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Batal'),
+            ),
+            // DIUBAH: Menggunakan warna yang sama persis dengan tombol "Tandai Selesai"
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.green.shade600, // Warna disamakan
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Ya, Selesaikan'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Lanjutkan hanya jika pengguna menekan "Ya, Selesaikan" (dialog mengembalikan true)
+    if (confirm == true) {
+      setState(() {
+        _selectedStatus = 'Resolved';
+        _isResolved = true;
+      });
+      // Panggil fungsi untuk menyimpan perubahan ke server
+      _saveChanges();
+    }
   }
 
   Future<void> _showDueDateEditor() async {
@@ -468,7 +505,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen>
             ),
     );
 
-     return PopScope(
+    return PopScope(
       canPop: false, // Cegah pop otomatis
       onPopInvoked: (didPop) {
         if (didPop) return;

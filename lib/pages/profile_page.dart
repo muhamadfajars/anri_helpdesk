@@ -25,7 +25,8 @@ class _ProfilePageState extends State<ProfilePage> {
     if (mounted) {
       setState(() {
         _userName = prefs.getString('user_name') ?? 'Nama Tidak Ditemukan';
-        _userEmail = prefs.getString('user_email') ?? 'email@tidakditemukan.com';
+        _userEmail =
+            prefs.getString('user_email') ?? 'email@tidakditemukan.com';
       });
     }
   }
@@ -63,7 +64,7 @@ class _ProfilePageState extends State<ProfilePage> {
         await prefs.setString('user_username', username);
         await prefs.setBool('rememberMe', true);
       }
-      
+
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -79,7 +80,7 @@ class _ProfilePageState extends State<ProfilePage> {
         return AlertDialog(
           title: const Text('Tentang Aplikasi'),
           content: const Text(
-            'Aplikasi Helpdesk ANRI\nVersi 1.0.0\n\nDibuat untuk memudahkan pelaporan dan penanganan tiket di lingkungan Arsip Nasional Republik Indonesia.',
+            'Aplikasi ANRI Helpdesk\nVersi 1.0.0\n\nDibuat untuk memudahkan pemantauan dan penanganan tiket laporan kendala di lingkungan Arsip Nasional Republik Indonesia.',
           ),
           actions: <Widget>[
             TextButton(
@@ -146,7 +147,12 @@ class _ProfilePageState extends State<ProfilePage> {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
-      padding: EdgeInsets.only(top: statusBarHeight + appBarHeight, bottom: 24, left: 16, right: 16),
+      padding: EdgeInsets.only(
+        top: statusBarHeight + appBarHeight,
+        bottom: 24,
+        left: 16,
+        right: 16,
+      ),
       width: double.infinity,
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -154,7 +160,7 @@ class _ProfilePageState extends State<ProfilePage> {
           colors: isDarkMode
               ? [
                   Theme.of(context).colorScheme.surface,
-                  Theme.of(context).colorScheme.surface.withAlpha(220)
+                  Theme.of(context).colorScheme.surface.withAlpha(220),
                 ]
               : [Colors.blue.shade400, Colors.blue.shade700],
           begin: Alignment.topLeft,
@@ -165,8 +171,8 @@ class _ProfilePageState extends State<ProfilePage> {
             color: Colors.black.withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 4),
-          )
-        ]
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -221,7 +227,10 @@ class _ProfilePageState extends State<ProfilePage> {
           title,
           style: TextStyle(fontWeight: FontWeight.bold, color: color),
         ),
-        subtitle: Text(subtitle, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+        ),
         trailing: const Icon(Icons.chevron_right),
         onTap: onTap,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
