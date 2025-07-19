@@ -1,13 +1,14 @@
 {
   "project_info": {
-    "project_number": "38529409474",
-    "project_id": "anri-notifikasi",
-    "storage_bucket": "anri-notifikasi.firebasestorage.app"
+    "project_number": "952521403907",
+    "firebase_url": "https://anri-5e06f-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "anri-5e06f",
+    "storage_bucket": "anri-5e06f.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:38529409474:android:702870785358d7613c765b",
+        "mobilesdk_app_id": "1:952521403907:android:63a77de2e9e9d60a212836",
         "android_client_info": {
           "package_name": "com.example.anri"
         }
@@ -15,7 +16,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDLgnaipmBZ7GouesfFigyNIYoBHbDVO0g"
+          "current_key": "AIzaSyAyJmceo861JmncvuulVg0uixRfiXRZ3KY"
         }
       ],
       "services": {
